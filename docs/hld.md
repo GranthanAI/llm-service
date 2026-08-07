@@ -81,7 +81,7 @@ graph TD
     MemSvc["Memory Service"]
     GraphSvc["Graph Service"]
     RetSvc["Retrieval Service"]
-    ExtLLM["External LLM Providers\n(OpenAI / Claude / Gemini)"]
+    ExtLLM["External LLM Providers\n(Groq / NVIDIA NIM / Gemini)"]
     WebSearch["Web Search API"]
 
     User -->|"WebSocket / SSE"| ConvSvc
@@ -429,8 +429,8 @@ stateDiagram-v2
     ContextCollection --> PromptAssembly
     ToolExecution --> PromptAssembly
     PromptAssembly --> TokenManagement
-    TokenManagement --> ModelRouting
-    ModelRouting --> LLMInference
+    TokenManagement --> ProviderRouting
+    ProviderRouting --> LLMInference
     LLMInference --> StreamingOutput
     StreamingOutput --> [*]
     LLMInference --> RetryFallback: on failure
@@ -952,13 +952,13 @@ graph LR
     end
 
     subgraph "External (HTTP)"
-        OpenAI["OpenAI"]
-        Claude["Anthropic"]
-        Gemini["Google"]
-        Search["Tavily"]
-        LLM -- "Generation Router" --> OpenAI
-        LLM -- "Generation Router" --> Claude
-        LLM -- "Generation Router" --> Gemini
+        Groq["Groq API\n(Request Analysis)"]
+        NVIDIA["NVIDIA NIM\n(Response Generation)"]
+        Gemini["Gemini API\n(Fallback)"]
+        Search["Tavily\n(Web Search)"]
+        LLM -- "Groq Adapter" --> Groq
+        LLM -- "NVIDIA Adapter" --> NVIDIA
+        LLM -- "Gemini Adapter" --> Gemini
         LLM -- "ToolDispatcher" --> Search
     end
 ```
@@ -1379,7 +1379,7 @@ graph TD
         FastAPI["FastAPI + Uvicorn"]
         Pydantic["Pydantic v2"]
         LangGraph["LangGraph"]
-        Generation Router["Generation Router"]
+        GenerationRouterNode["Generation Router"]
         tiktoken["tiktoken"]
     end
 
@@ -2133,23 +2133,19 @@ sequenceDiagram
 ### 35.1 Complete System Context Diagram
 
 ```mermaid
-C4Context
-    title System Context — GraphGPT LLM Service
+flowchart TD
+    User["👤 GraphGPT User\n100M+ users across all tiers"]
+    Platform["🧠 GraphGPT Platform\nAI-native graph conversation platform"]
+    Groq["Groq API\nLlama-3.3-70b-versatile\n(Request Analysis — Call 1)"]
+    NVIDIA["NVIDIA NIM API\nmeta/llama-3.1-70b-instruct\n(Response Generation — Call 2)"]
+    Gemini["Google Gemini API\nGemini-1.5-pro\n(Fallback Inference)"]
+    Tavily["Tavily Search API\n(Web Search Tool)"]
 
-    Person(user, "GraphGPT User", "100M+ users across all tiers")
-    
-    System(graphgpt, "GraphGPT Platform", "AI-native graph conversation platform")
-    
-    System_Ext(groq, "Groq API", "Llama-3.3-70b-versatile (Request Analysis)")
-    System_Ext(nvidia, "NVIDIA NIM API", "Llama-3.1-70b-instruct (Response Generation)")
-    System_Ext(google, "Google API", "Gemini-1.5-pro (Fallback)")
-    System_Ext(tavily, "Tavily Search API", "Web search for AI")
-    
-    Rel(user, graphgpt, "Sends messages, receives streaming responses", "WebSocket/SSE")
-    Rel(graphgpt, groq, "Request Analysis Call 1", "HTTPS")
-    Rel(graphgpt, nvidia, "Response Generation Call 2", "HTTPS")
-    Rel(graphgpt, google, "Fallback Inference", "HTTPS")
-    Rel(graphgpt, tavily, "Web search tool", "HTTPS")
+    User -->|"WebSocket / SSE"| Platform
+    Platform -->|"HTTPS — Request Analysis"| Groq
+    Platform -->|"HTTPS — Response Generation"| NVIDIA
+    Platform -->|"HTTPS — Fallback"| Gemini
+    Platform -->|"HTTPS — Web Search"| Tavily
 ```
 
 ### 35.2 Data Flow Diagram

@@ -129,163 +129,169 @@ graph LR
 ```
 llm-service/
 │
-├── src/
-│   └── llm_service/
-│       ├── main.py                    # FastAPI app factory + lifespan
-│       ├── config.py                  # Pydantic Settings (all env vars)
-│       ├── dependencies.py            # FastAPI dependency injection container
-│       │
-│       ├── api/                       # HTTP layer (health, admin endpoints)
-│       │   ├── __init__.py
-│       │   ├── router.py              # Aggregates all API routers
-│       │   ├── health.py              # GET /health, GET /ready
-│       │   └── admin.py               # GET /admin/providers, POST /admin/circuit-reset
-│       │
-│       ├── consumer/                  # Kafka ingestion layer
-│       │   ├── __init__.py
-│       │   ├── kafka_consumer.py      # KafkaConsumer class (aiokafka)
-│       │   ├── event_handler.py       # Routes events by event_type
-│       │   ├── message_processor.py   # Orchestrates pipeline for chat.message.created
-│       │   └── schemas.py             # ChatMessageCreatedEvent, ChatMessageDLQEvent
-│       │
-│       ├── publisher/                 # Kafka output layer
-│       │   ├── __init__.py
-│       │   ├── kafka_publisher.py     # KafkaPublisher class (aiokafka producer)
-│       │   └── schemas.py             # ChatResponseChunkEvent, ChatResponseGeneratedEvent
-│       │
-│       ├── orchestration/             # Core agentic execution layer
-│       │   ├── __init__.py
-│       │   ├── graph_builder.py       # Builds LangGraph StateGraph
-│       │   ├── state.py               # AgentState TypedDict + all nested models
-│       │   └── pipeline.py            # Entrypoint: run_pipeline(event) → AgentState
-│       │
-│       ├── context/                   # Context aggregation layer (RUNS FIRST)
-│       │   ├── __init__.py
-│       │   ├── collector.py           # ContextCollector — always-fetch parallel gRPC
-│       │   ├── merger.py              # ContextMerger (deduplicate + rank)
-│       │   └── schemas.py             # MemoryContext, GraphContext, RetrievalContext, ContextBundle
-│       │
-│       ├── analyzer/                  # Request Analyzer (Groq — Call 1 of 2)
-│       │   ├── __init__.py
-│       │   ├── request_analyzer.py    # RequestAnalyzer — single Groq call
-│       │   ├── groq_client.py         # Groq HTTP client (analysis-only)
-│       │   └── schemas.py             # AnalysisRequest, ExecutionPlan, IntentCategory,
-│       │                              # UserMode, Skill, ReasoningMode, ToolCall
-│       │
-│       ├── tools/                     # Tool framework + implementations
-│       │   ├── __init__.py
-│       │   ├── base.py                # BaseTool abstract class
-│       │   ├── registry.py            # ToolRegistry
-│       │   ├── dispatcher.py          # ToolDispatcher (executes plans)
-│       │   ├── executor.py            # ToolExecutor (single tool lifecycle)
-│       │   ├── schemas.py             # ToolParams, ToolResult, ToolMetadata
-│       │   │
-│       │   └── implementations/
-│       │       ├── __init__.py
-│       │       ├── mcp_tool.py        # MCPTool → Dynamic MCP Proxy
-
-│       │       └── web_search_tool.py # WebSearchTool → Tavily HTTP
-│       │
-│       ├── prompt/                    # Prompt engineering layer
-│       │   ├── __init__.py
-│       │   ├── loader.py              # PromptLoader (YAML → PromptTemplate)
-│       │   ├── registry.py            # PromptRegistry (skill → template)
-│       │   ├── builder.py             # PromptBuilder (assembles final prompt)
-│       │   └── schemas.py             # ComposedPrompt, PromptSection
-│       │
-│       ├── inference/                 # Provider inference layer
-│       │   ├── __init__.py
-│       │   ├── context_window.py      # ContextWindowManager (tiktoken)
-│       │   ├── generation_router.py     # GenerationRouter — routes to correct adapter
-│       │   ├── adapters/
-│       │   │   ├── __init__.py
-│       │   │   ├── base_adapter.py    # BaseProviderAdapter (abstract)
-│       │   │   ├── nvidia_adapter.py  # NVIDIA NIM Adapter (response generation)
-│       │   │   ├── gemini_adapter.py  # Gemini Adapter (fallback)
-│       │   │   └── groq_adapter.py    # Groq Adapter (request analysis)
-│       │   ├── streaming_engine.py    # StreamingEngine class
-│       │   ├── retry_manager.py       # RetryManager (tenacity)
-│       │   └── circuit_breaker.py     # CircuitBreaker (per-provider)
-│       │
-│       ├── clients/                   # gRPC client wrappers
-│       │   ├── __init__.py
-│       │   ├── base_client.py         # BaseGRPCClient (connection pool, retry)
-│       │   ├── memory_client.py       # MemoryServiceClient
-│       │   ├── graph_client.py        # GraphServiceClient
-│       │   └── retrieval_client.py    # RetrievalServiceClient
-│       │
-│       ├── cache/                     # Caching layer
-│       │   ├── __init__.py
-│       │   └── in_memory_cache.py     # TTLCache (asyncio-safe)
-│       │
-│       └── observability/             # Cross-cutting concerns
-│           ├── __init__.py
-│           ├── tracing.py             # OTel tracer factory + span decorators
-│           ├── metrics.py             # All Prometheus metric definitions
-│           └── logging.py             # Structlog processor chain
+├── app/
 │
-├── prompts/                           # Versioned prompt templates (YAML)
-│   ├── general_chat_v2.yaml
-│   ├── tutor_v1.yaml
-│   ├── coding_v3.yaml
-│   ├── research_v2.yaml
-│   └── reasoning_v1.yaml
-│
-├── proto/                             # gRPC proto definitions (compiled stubs also here)
-│   ├── memory_service.proto
-│   ├── graph_service.proto
-│   ├── retrieval_service.proto
-│   └── generated/
+│   ├── api/
+│   │   ├── dependencies.py
+│   │   ├── routers.py
+│   │   └── internal/
+│   │       ├── health.py
+│   │       ├── readiness.py
+│   │       └── metrics.py
+│   │
+│   ├── config/
+│   │   ├── settings.py
+│   │   ├── logging.py
+│   │   ├── kafka.py
+│   │   ├── grpc.py
+│   │   ├── providers.py
+│   │   └── prompts.py
+│   │
+│   ├── consumers/
+│   │   ├── kafka_consumer.py
+│   │   └── chat_consumer.py
+│   │
+│   ├── producers/
+│   │   ├── kafka_producer.py
+│   │   └── response_publisher.py
+│   │
+│   ├── graph/
+│   │   ├── builder.py
+│   │   ├── state.py
+│   │   ├── edges.py
+│   │   │
+│   │   ├── nodes/
+│   │   │   ├── context_collector.py   # Always-first: parallel gRPC to Memory/Graph/Retrieval
+│   │   │   ├── request_analyzer.py    # Single Groq call - returns ExecutionPlan (Call 1)
+│   │   │   ├── tool_dispatcher.py     # Dispatch tools from plan (no-op if tools=[])
+│   │   │   ├── prompt_builder.py      # Assemble final prompt from context + tool results
+│   │   │   ├── generation_router.py   # Route to NVIDIA NIM (Call 2) or Gemini fallback
+│   │   │   ├── llm_generator.py       # Stream tokens from provider adapter
+│   │   │   ├── response_validator.py  # Output safety and length checks
+│   │   │   └── publish_response.py    # Publish chat.response.generated + memory.update.requested
+│   │   │
+│   │   └── subgraphs/             # Complex tools as LangGraph sub-graphs
+│   │       ├── web_search/
+│   │       │   ├── builder.py
+│   │       │   ├── state.py
+│   │       │   └── nodes.py
+│   │       │
+│   │       ├── deep_research/
+│   │       │   ├── builder.py
+│   │       │   ├── state.py
+│   │       │   └── nodes.py
+│   │       │
+│   │       ├── github/
+│   │       ├── browser/
+│   │       ├── sql/
+│   │       └── mcp/
+│   │
+│   ├── grpc/
+│   │   ├── clients/
+│   │   │   ├── memory_client.py
+│   │   │   ├── graph_client.py
+│   │   │   └── retrieval_client.py
+│   │   │
+│   │   └── proto/
+│   │
+│   ├── providers/
+│   │   ├── base.py                # BaseProviderAdapter (abstract)
+│   │   ├── router.py              # GenerationRouter - routes to correct adapter
+│   │   ├── groq.py                # Groq Adapter (request analysis - Call 1)
+│   │   ├── nvidia.py              # NVIDIA NIM Adapter (response generation - Call 2)
+│   │   ├── gemini.py              # Gemini Adapter (fallback)
+│   │   └── models.py              # ProviderConfig, ProviderSelection
+│   │
+│   ├── prompts/
+│   │   ├── system/
+│   │   ├── modes/
+│   │   ├── skills/
+│   │   └── templates/
+│   │
+│   ├── tools/                     # Tool framework (base classes only)
+│   │   ├── base.py                # BaseTool abstract class
+│   │   ├── registry.py            # ToolRegistry
+│   │   ├── dispatcher.py          # ToolDispatcher (executes plans)
+│   │   ├── executor.py            # ToolExecutor (single tool lifecycle)
+│   │   ├── validator.py           # ToolParams validation
+│   │   └── normalizer.py          # ToolResult normalization
+│   │
+│   ├── models/
+│   │   ├── request.py
+│   │   ├── response.py
+│   │   ├── execution_plan.py
+│   │   ├── provider.py
+│   │   ├── tool.py
+│   │   └── state.py
+│   │
+│   ├── services/
+│   │   ├── context_service.py
+│   │   ├── prompt_service.py
+│   │   ├── provider_service.py
+│   │   ├── streaming_service.py   # StreamingEngine (chunk accumulation + Kafka publish)
+│   │   └── token_service.py       # ContextWindowManager (tiktoken counting + trimming)
+│   │
+│   ├── utils/
+│   │   ├── retry.py               # RetryManager (tenacity wrapper)
+│   │   ├── circuit_breaker.py     # CircuitBreaker (per-provider)
+│   │   ├── token_counter.py       # tiktoken-based token counting
+│   │   ├── metrics.py             # Prometheus metric definitions
+│   │   ├── tracing.py             # OTel tracer factory + span decorators
+│   │   └── helpers.py
+│   │
+│   ├── exceptions/
+│   │   ├── provider.py            # ProviderError, AllProvidersFailedError
+│   │   ├── tool.py                # ToolError, RequiredToolFailedError
+│   │   ├── grpc.py                # GRPCError, GRPCUnavailableError
+│   │   └── planner.py             # PlanError, CriticalAnalysisError
+│   │
+│   ├── middleware/
+│   │
+│   └── main.py
 │
 ├── tests/
-│   ├── conftest.py
 │   ├── unit/
-│   │   ├── test_context_collector.py
-│   │   ├── test_request_analyzer.py
-│   │   ├── test_prompt_builder.py
-│   │   ├── test_context_window.py
-│   │   ├── test_generation_router.py
-│   │   ├── test_circuit_breaker.py
-│   │   └── test_retry_manager.py
 │   ├── integration/
-│   │   ├── test_kafka_consumer.py
-│   │   ├── test_grpc_clients.py
-│   │   ├── test_tool_dispatcher.py
-│   │   └── test_pipeline_e2e.py
-│   └── load/
-│       └── locustfile.py
+│   ├── graph/
+│   ├── grpc/
+│   ├── kafka/
+│   ├── providers/
+│   └── tools/
 │
-├── k8s/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── hpa.yaml
-│   ├── pdb.yaml
-│   └── configmap.yaml
+├── scripts/
+│
+├── proto/
+│
+├── deployments/
+│   ├── docker/
+│   └── kubernetes/
+│
+├── docs/
 │
 ├── Dockerfile
-├── docker-compose.yaml
+├── docker-compose.yml
 ├── pyproject.toml
+├── Makefile
 └── README.md
 ```
+
+> **Key design decision:** Tool *implementations* that are simple HTTP function calls live under `tools/`. Complex multi-step tool workflows (Deep Research, Browser Automation, GitHub search, SQL queries, MCP proxies) live under `graph/subgraphs/` as proper LangGraph sub-graphs, letting them evolve independently with their own state, edges, and nodes.
 
 ### Import Boundary Rules
 
 ```
-consumer/ → orchestration/ → context/ → analyzer/ → tools/ → clients/
-consumer/ → publisher/
-analyzer/ → inference/ (Groq adapter only)
-tools/ → clients/ (gRPC tools call clients directly)
-orchestration/ → prompt/ → inference/
-ALL → config/, observability/
+consumers/ -> graph/ -> grpc/clients/
+consumers/ -> producers/
+graph/nodes/ -> services/ -> providers/
+graph/subgraphs/ -> grpc/clients/
+providers/ -> utils/retry, utils/circuit_breaker
+ALL -> utils/, exceptions/, models/, config/
 
 FORBIDDEN:
-  clients/  → orchestration/    (clients are pure gRPC wrappers)
-  tools/    → prompt/           (tools produce ToolResult, not prompts)
-  prompt/   → tools/            (prompt builder reads state, not tools)
-  analyzer/ → context/          (analyzer receives context as input, never calls it)
+  grpc/clients/ -> graph/             (clients are pure gRPC wrappers)
+  tools/        -> prompts/           (tools produce ToolResult, not prompts)
+  prompts/      -> tools/             (prompt builder reads state, not tools)
 ```
-
----
 
 ## 3. Boot Process
 
@@ -1021,8 +1027,7 @@ stateDiagram-v2
     ContextReady --> ToolsExecuted: tool_results appended
     ToolsExecuted --> PromptReady: composed_prompt set
     PromptReady --> TokenManaged: token_count set
-    TokenManaged --> ModelSelected: provider_selection set
-    ModelSelected --> Inferring: llm_response streaming
+    TokenManaged --> Inferring: llm_inference begins
     Inferring --> Streaming: response_chunks appending
     Streaming --> Complete: full_response set
     Complete --> Published: Kafka events emitted
@@ -1525,19 +1530,19 @@ ToolResult.data schema:
 sequenceDiagram
     participant Dispatcher as ToolDispatcher
     participant SearchTool as WebSearchTool
-    participant Tavily as Tavily API (HTTP)
-    participant Bing as Bing API (HTTP fallback)
+    participant Tavily as TavilyAPI
+    participant Bing as BingAPI
 
     Dispatcher->>SearchTool: execute(params)
     SearchTool->>SearchTool: extract_query(params)
-    SearchTool->>Tavily: POST /search (httpx async)
+    SearchTool->>TavilyAPI: POST /search (httpx async)
     alt Success
-        Tavily-->>SearchTool: results
+        TavilyAPI-->>SearchTool: results
         SearchTool->>SearchTool: normalize_results(results)
         SearchTool-->>Dispatcher: ToolResult(success=True)
     else HTTP error or timeout
-        SearchTool->>Bing: GET /search (httpx async, fallback)
-        Bing-->>SearchTool: results
+        SearchTool->>BingAPI: GET /search (httpx async, fallback)
+        BingAPI-->>SearchTool: results
         SearchTool-->>Dispatcher: ToolResult(success=True, metadata.source="bing")
     end
 ```
@@ -2391,7 +2396,7 @@ User input passes through `InputSanitizer` before being included in any prompt:
 flowchart LR
     Input["raw user_message"]
     Sanitizer["InputSanitizer"]
-    DI["Delimiter Injection Check\n(escape ### , <|, [INST])"]
+    DI["Delimiter Injection Check\n(escape system prompt tokens)"]
     Override["Instruction Override Check\n(regex: ignore previous, forget)"]
     Length["Length Enforcement\n(max 4096 chars)"]
     Clean["sanitized_message"]
@@ -3043,13 +3048,14 @@ sequenceDiagram
     participant GraphGRPC as GraphServiceClient
     participant RetGRPC as RetrievalServiceClient
     participant Analyzer as RequestAnalyzer
-    participant Groq as Groq (Call 1)
+    participant Groq as Groq
     participant PB as PromptBuilder
     participant CWM as ContextWindowManager
     participant Router as GenerationRouter
-    participant NVIDIA as NVIDIA NIM (Call 2)
+    participant NVIDIA as NVIDIA_NIM
     participant Stream as StreamingEngine
     participant Pub as KafkaPublisher
+    participant Consumer
 
     Kafka->>Consumer: ConsumerRecord(chat.message.created)
     Consumer->>Consumer: deserialize + idempotency check
@@ -3081,10 +3087,10 @@ sequenceDiagram
     CWM-->>Pipeline: {token_count: 1450}
 
     Pipeline->>Router: llm_inference_node(state)
-    Router->>NVIDIA: POST /v1/chat/completions (stream=true, llama-3.1-70b-instruct)
+    Router->>NVIDIA_NIM: POST /v1/chat/completions (stream=true, llama-3.1-70b-instruct)
 
     loop Token stream
-        NVIDIA-->>Router: chunk
+        NVIDIA_NIM-->>Router: chunk
         Router-->>Stream: token
         Stream->>Pub: publish_chunk(chunk_sequence_number)
     end
@@ -3111,7 +3117,7 @@ sequenceDiagram
     participant WebSearch as WebSearchTool
     participant PB as PromptBuilder
     participant Router as GenerationRouter
-    participant NVIDIA as NVIDIA NIM (Call 2)
+    participant NVIDIA as NVIDIA_NIM
 
     Pipeline->>Ctx: context_collection_node(state)
     Ctx-->>Pipeline: {context_bundle: ...}
