@@ -47,15 +47,22 @@ class LLMServiceConfig(BaseSettings):
     grpc_deadline_ms: int = Field(default=2000, ge=500, le=30000)
     grpc_max_connections: int = 20
 
-    # Provider API Keys
+    # Provider API Keys & Settings
     groq_api_key: SecretStr = Field(default=SecretStr(""))
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_timeout_ms: int = 3000
+
     nvidia_api_key: SecretStr = Field(
         default=SecretStr(""),
         validation_alias=AliasChoices(
             "NVIDIA_API_KEY", "NVIDIA_KEY", "nvidia_api_key", "nvidia_key"
         ),
     )
+    nvidia_model: str = "meta/llama-3.1-70b-instruct"
+
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
+    gemini_model: str = "gemini-1.5-pro"
+
     tavily_api_key: SecretStr = Field(default=SecretStr(""))
 
     # Tool Timeouts

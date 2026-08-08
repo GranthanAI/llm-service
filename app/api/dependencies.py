@@ -16,6 +16,7 @@ from app.grpc.clients import (
     RetrievalServiceClient,
 )
 from app.producers.kafka_producer import KafkaPublisher
+from app.request_analyzer.analyzer import RequestAnalyzer
 
 
 class Container:
@@ -41,7 +42,10 @@ class Container:
         # Context Collector (Phase 5)
         self.context_collector: ContextCollector | None = None
 
-        # Placeholders for subsequent phases (Analyzer, Workflow Engine, Providers)
+        # Request Analyzer (Phase 6)
+        self.request_analyzer: RequestAnalyzer | None = None
+
+        # Placeholders for subsequent phases (Tools, Workflow Engine, Providers)
         self.tool_registry: Any | None = None
         self.prompt_registry: Any | None = None
         self.workflow_engine: Any | None = None

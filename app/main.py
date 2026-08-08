@@ -32,8 +32,13 @@ from app.grpc.clients import (
     RetrievalServiceClient,
 )
 from app.producers.kafka_producer import KafkaPublisher
+from app.request_analyzer.analyzer import RequestAnalyzer
+from app.request_analyzer.groq_client import GroqAnalysisClient
+from app.request_analyzer.prompt_template import AnalysisPromptBuilder
+from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from app.utils.helpers import generate_request_id
 from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
+from app.utils.retry import RetryManager, RetryPolicy
 from app.utils.tracing import setup_tracing
 
 
@@ -95,7 +100,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         merger=ContextMerger(),
     )
 
-    # 6. Initialize Kafka Producer & Consumer
+    # 6. Initialize Request Analyzer (Phase 6)
+    groq_client = GroqAnalysisClient(
+        api_key=config.groq_api_key.get_secret_value() if config.groq_api_key else "",
+        model=config.groq_model,
+        timeout_ms=config.groq_timeout_ms,
+    )
+    container.request_analyzer = RequestAnalyzer(
+        groq_client=groq_client,
+        prompt_builder=AnalysisPromptBuilder(),
+        circuit_breaker=CircuitBreaker(
+            name="groq",
+            config=CircuitBreakerConfig(failure_threshold=5, recovery_timeout_seconds=30),
+        ),
+        retry_manager=RetryManager(
+            policy=RetryPolicy(max_attempts=2, initial_delay_ms=50, max_delay_ms=200)
+        ),
+        config=config,
+    )
+
+    # 7. Initialize Kafka Producer & Consumer
     publisher = KafkaPublisher(config=config)
     chat_consumer = ChatConsumer()
     consumer_engine = KafkaConsumerEngine(

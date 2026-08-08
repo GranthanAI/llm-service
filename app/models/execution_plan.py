@@ -80,7 +80,7 @@ class ExecutionPlan(BaseModel):
     skill: Skill = Skill.GENERAL_CHAT
     reasoning: ReasoningMode = ReasoningMode.DIRECT
     tools: list[ToolCall] = Field(default_factory=list)
-    max_iterations: int = Field(default=1, ge=1, le=10)
+    max_iterations: int = Field(default=1, ge=1)
     suggested_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     analysis_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     groq_model_used: str = "llama-3.3-70b-versatile"
