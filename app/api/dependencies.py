@@ -9,6 +9,7 @@ from fastapi import Depends, Request
 
 from app.config.settings import LLMServiceConfig, get_settings
 from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.context.collector import ContextCollector
 from app.grpc.clients import (
     GraphServiceClient,
     MemoryServiceClient,
@@ -37,7 +38,10 @@ class Container:
         self.graph_client: GraphServiceClient | None = None
         self.retrieval_client: RetrievalServiceClient | None = None
 
-        # Placeholders for subsequent phases (Context, Analyzer, Workflow Engine, Providers)
+        # Context Collector (Phase 5)
+        self.context_collector: ContextCollector | None = None
+
+        # Placeholders for subsequent phases (Analyzer, Workflow Engine, Providers)
         self.tool_registry: Any | None = None
         self.prompt_registry: Any | None = None
         self.workflow_engine: Any | None = None

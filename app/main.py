@@ -24,6 +24,8 @@ from app.config.logging import (
 from app.config.settings import LLMServiceConfig, get_settings
 from app.consumers.chat_consumer import ChatConsumer
 from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.context.collector import ContextCollector
+from app.context.merger import ContextMerger
 from app.grpc.clients import (
     GraphServiceClient,
     MemoryServiceClient,
@@ -85,7 +87,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         keepalive_enabled=config.feature_grpc_keepalive,
     )
 
-    # 5. Initialize Kafka Producer & Consumer
+    # 5. Initialize Context Collector (Phase 5)
+    container.context_collector = ContextCollector(
+        memory_client=container.memory_client,
+        graph_client=container.graph_client,
+        retrieval_client=container.retrieval_client,
+        merger=ContextMerger(),
+    )
+
+    # 6. Initialize Kafka Producer & Consumer
     publisher = KafkaPublisher(config=config)
     chat_consumer = ChatConsumer()
     consumer_engine = KafkaConsumerEngine(
