@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package graph;
+
+service GraphService {
+  // Fetch relevant graph context for a query
+  rpc GetGraphContext(GetGraphContextRequest) returns (GetGraphContextResponse);
+
+  // Fetch specific nodes by ID
+  rpc GetNodesByIds(GetNodesByIdsRequest) returns (GetNodesByIdsResponse);
+}
+
+message GetGraphContextRequest {
+  string user_id = 1;
+  string conversation_id = 2;
+  string query = 3;           // for semantic node retrieval
+  int32 max_nodes = 4;        // limit on returned nodes
+  int32 max_depth = 5;        // graph traversal depth
+  int32 max_tokens = 6;       // token budget for graph section
+  string trace_id = 7;
+}
+
+message GetNodesByIdsRequest {
+  repeated string node_ids = 1;
+  string user_id = 2;
+  string trace_id = 3;
+}
+
+message GraphNode {
+  string node_id = 1;
+  string label = 2;
+  string node_type = 3;
+  map<string, string> properties = 4;
+  float relevance_score = 5;
+}
+
+message GraphRelationship {
+  string from_node_id = 1;
+  string to_node_id = 2;
+  string relationship_type = 3;
+  map<string, string> properties = 4;
+}
+
+message GetGraphContextResponse {
+  repeated GraphNode nodes = 1;
+  repeated GraphRelationship relationships = 2;
+  string subgraph_summary = 3;    // LLM-friendly text summary
+  int32 total_tokens = 4;
+  string request_id = 5;
+}
+
+message GetNodesByIdsResponse {
+  repeated GraphNode nodes = 1;
+}

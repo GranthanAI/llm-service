@@ -51,10 +51,14 @@ run:
 	uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 test:
-	uv run pytest tests/unit -v
+	uv run pytest tests -v
 
 test-cov:
-	uv run pytest tests/unit --cov=app --cov-report=term-missing
+	uv run pytest tests --cov=app --cov-report=term-missing
+
+proto:
+	uv run python -m grpc_tools.protoc -Iproto --python_out=app/grpc/proto --grpc_python_out=app/grpc/proto proto/memory.proto proto/graph.proto proto/retrieval.proto proto/llm_service.proto
+	uv run python -c "import glob, re; [open(p, 'w', encoding='utf-8').write(re.sub(r'import (\w+_pb2) as (\w+__pb2)', r'from app.grpc.proto import \1 as \2', open(p, 'r', encoding='utf-8').read())) for p in glob.glob('app/grpc/proto/*_pb2_grpc.py')]"
 
 lint:
 	uv run ruff check app tests

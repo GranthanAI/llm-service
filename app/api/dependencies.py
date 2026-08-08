@@ -9,6 +9,11 @@ from fastapi import Depends, Request
 
 from app.config.settings import LLMServiceConfig, get_settings
 from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.grpc.clients import (
+    GraphServiceClient,
+    MemoryServiceClient,
+    RetrievalServiceClient,
+)
 from app.producers.kafka_producer import KafkaPublisher
 
 
@@ -27,10 +32,12 @@ class Container:
         self.kafka_producer: KafkaPublisher | None = None
         self.kafka_consumer: KafkaConsumerEngine | None = None
 
+        # Baseline gRPC Context Providers (Phase 4)
+        self.memory_client: MemoryServiceClient | None = None
+        self.graph_client: GraphServiceClient | None = None
+        self.retrieval_client: RetrievalServiceClient | None = None
+
         # Placeholders for subsequent phases (Context, Analyzer, Workflow Engine, Providers)
-        self.memory_client: Any | None = None
-        self.graph_client: Any | None = None
-        self.retrieval_client: Any | None = None
         self.tool_registry: Any | None = None
         self.prompt_registry: Any | None = None
         self.workflow_engine: Any | None = None

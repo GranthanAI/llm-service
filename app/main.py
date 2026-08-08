@@ -24,6 +24,11 @@ from app.config.logging import (
 from app.config.settings import LLMServiceConfig, get_settings
 from app.consumers.chat_consumer import ChatConsumer
 from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.grpc.clients import (
+    GraphServiceClient,
+    MemoryServiceClient,
+    RetrievalServiceClient,
+)
 from app.producers.kafka_producer import KafkaPublisher
 from app.utils.helpers import generate_request_id
 from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
@@ -57,7 +62,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container: Container = init_container(config=config)
     app.state.container = container
 
-    # 4. Initialize Kafka Producer & Consumer
+    # 4. Initialize Baseline gRPC Clients (Context Collector providers only)
+    container.memory_client = MemoryServiceClient(
+        host=config.memory_service_host,
+        port=config.memory_service_port,
+        pool_size=config.grpc_max_connections,
+        deadline_ms=config.grpc_deadline_ms,
+        keepalive_enabled=config.feature_grpc_keepalive,
+    )
+    container.graph_client = GraphServiceClient(
+        host=config.graph_service_host,
+        port=config.graph_service_port,
+        pool_size=config.grpc_max_connections,
+        deadline_ms=config.grpc_deadline_ms,
+        keepalive_enabled=config.feature_grpc_keepalive,
+    )
+    container.retrieval_client = RetrievalServiceClient(
+        host=config.retrieval_service_host,
+        port=config.retrieval_service_port,
+        pool_size=config.grpc_max_connections,
+        deadline_ms=config.grpc_deadline_ms,
+        keepalive_enabled=config.feature_grpc_keepalive,
+    )
+
+    # 5. Initialize Kafka Producer & Consumer
     publisher = KafkaPublisher(config=config)
     chat_consumer = ChatConsumer()
     consumer_engine = KafkaConsumerEngine(
@@ -95,6 +123,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await container.kafka_producer.stop()
             except Exception:
                 pass
+        # Close gRPC connection pools
+        if container.memory_client:
+            await container.memory_client.close()
+        if container.graph_client:
+            await container.graph_client.close()
+        if container.retrieval_client:
+            await container.retrieval_client.close()
         log.info("Service shutdown completed")
 
 

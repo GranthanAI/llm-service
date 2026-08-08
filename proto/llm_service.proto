@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package llm_service;
+
+service LLMService {
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // Get current provider health status (groq, nvidia, gemini)
+  rpc GetProviderHealth(ProviderHealthRequest) returns (ProviderHealthResponse);
+
+  // Get current Workflow Engine dispatch stats (mode_handler vs langgraph split)
+  rpc GetWorkflowEngineStats(WorkflowEngineStatsRequest) returns (WorkflowEngineStatsResponse);
+
+  // Trigger a direct (non-Kafka) completion for internal tools (admin only)
+  rpc DirectComplete(DirectCompleteRequest) returns (stream DirectCompleteResponse);
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+}
+
+message ProviderHealthRequest {}
+
+message ProviderHealthResponse {
+  map<string, string> provider_status = 1;
+}
+
+message WorkflowEngineStatsRequest {}
+
+message WorkflowEngineStatsResponse {
+  int64 total_requests = 1;
+  map<string, int64> mode_dispatch_counts = 2;
+}
+
+message DirectCompleteRequest {
+  string user_id = 1;
+  string conversation_id = 2;
+  string message = 3;
+  string mode = 4;
+}
+
+message DirectCompleteResponse {
+  string token = 1;
+  bool is_last = 2;
+}
