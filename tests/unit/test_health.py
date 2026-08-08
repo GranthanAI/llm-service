@@ -3,8 +3,9 @@ Unit tests for health, readiness, and metrics endpoints.
 """
 
 from collections.abc import Generator
-from fastapi.testclient import TestClient
+
 import pytest
+from fastapi.testclient import TestClient
 
 from app.main import create_app
 
