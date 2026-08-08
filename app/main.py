@@ -42,6 +42,13 @@ from app.utils.retry import RetryManager, RetryPolicy
 from app.utils.tracing import setup_tracing
 from app.workflow_engine.engine import WorkflowEngine
 from app.workflow_engine.mode_dispatcher import ModeDispatcher
+from app.workflow_engine.mode_handlers import (
+    AskFilesHandler,
+    CodeHandler,
+    DefaultHandler,
+    TutorHandler,
+    WebSearchHandler,
+)
 
 
 @asynccontextmanager
@@ -121,9 +128,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config=config,
     )
 
-    # 7. Initialize Mode Dispatcher and Workflow Engine (Phase 7)
-    # Note: Mode handlers (Phase 8) and LangGraph graphs (Phase 10) will be registered into these maps
-    mode_dispatcher = ModeDispatcher(handlers={}, graphs={})
+    # 7. Initialize Deterministic Mode Handlers (Phase 8) & Mode Dispatcher (Phase 7)
+    handlers = {
+        "default": DefaultHandler(tool_dispatcher=container.tool_registry),
+        "tutor": TutorHandler(tool_dispatcher=container.tool_registry),
+        "code": CodeHandler(tool_dispatcher=container.tool_registry),
+        "ask_files": AskFilesHandler(),
+        "web_search": WebSearchHandler(tool_dispatcher=container.tool_registry),
+    }
+    mode_dispatcher = ModeDispatcher(handlers=handlers, graphs={})
     workflow_engine = WorkflowEngine(mode_dispatcher=mode_dispatcher)
     container.mode_dispatcher = mode_dispatcher
     container.workflow_engine = workflow_engine
