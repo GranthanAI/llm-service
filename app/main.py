@@ -22,6 +22,9 @@ from app.config.logging import (
     setup_logging,
 )
 from app.config.settings import LLMServiceConfig, get_settings
+from app.consumers.chat_consumer import ChatConsumer
+from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.producers.kafka_producer import KafkaPublisher
 from app.utils.helpers import generate_request_id
 from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
 from app.utils.tracing import setup_tracing
@@ -54,6 +57,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container: Container = init_container(config=config)
     app.state.container = container
 
+    # 4. Initialize Kafka Producer & Consumer
+    publisher = KafkaPublisher(config=config)
+    chat_consumer = ChatConsumer()
+    consumer_engine = KafkaConsumerEngine(
+        config=config,
+        publisher=publisher,
+        event_handler=chat_consumer.handle,
+    )
+    container.kafka_producer = publisher
+    container.kafka_consumer = consumer_engine
+
+    if config.environment != "test":
+        try:
+            await publisher.start()
+            await consumer_engine.start()
+            log.info("Kafka Producer and Consumer started")
+        except Exception as exc:
+            log.warning("Kafka broker connection deferred or offline", error=str(exc))
+
     # Mark service ready to accept traffic
     container.mark_ready(True)
     log.info("Service boot completed successfully — ready to accept traffic")
@@ -63,6 +85,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         log.info("Service shutting down — cleaning up resources")
         container.mark_ready(False)
+        if container.kafka_consumer:
+            try:
+                await container.kafka_consumer.stop()
+            except Exception:
+                pass
+        if container.kafka_producer:
+            try:
+                await container.kafka_producer.stop()
+            except Exception:
+                pass
         log.info("Service shutdown completed")
 
 

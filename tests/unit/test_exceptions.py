@@ -2,7 +2,6 @@
 Unit tests for exceptions and mode handler state.
 """
 
-
 from app.context.schemas import ContextBundle
 from app.exceptions.analysis import (
     CriticalAnalysisError,

@@ -8,6 +8,8 @@ from typing import Annotated, Any
 from fastapi import Depends, Request
 
 from app.config.settings import LLMServiceConfig, get_settings
+from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.producers.kafka_producer import KafkaPublisher
 
 
 class Container:
@@ -21,15 +23,17 @@ class Container:
         self.is_ready: bool = False
         self.is_healthy: bool = True
 
-        # Placeholders for phase 2+ infrastructure components
+        # Messaging infrastructure (Phase 3)
+        self.kafka_producer: KafkaPublisher | None = None
+        self.kafka_consumer: KafkaConsumerEngine | None = None
+
+        # Placeholders for subsequent phases (Context, Analyzer, Workflow Engine, Providers)
         self.memory_client: Any | None = None
         self.graph_client: Any | None = None
         self.retrieval_client: Any | None = None
         self.tool_registry: Any | None = None
         self.prompt_registry: Any | None = None
         self.workflow_engine: Any | None = None
-        self.kafka_producer: Any | None = None
-        self.kafka_consumer: Any | None = None
         self.generation_router: Any | None = None
 
     def mark_ready(self, ready: bool = True) -> None:
