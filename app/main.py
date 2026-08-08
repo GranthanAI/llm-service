@@ -40,6 +40,8 @@ from app.utils.helpers import generate_request_id
 from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
 from app.utils.retry import RetryManager, RetryPolicy
 from app.utils.tracing import setup_tracing
+from app.workflow_engine.engine import WorkflowEngine
+from app.workflow_engine.mode_dispatcher import ModeDispatcher
 
 
 @asynccontextmanager
@@ -119,7 +121,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config=config,
     )
 
-    # 7. Initialize Kafka Producer & Consumer
+    # 7. Initialize Mode Dispatcher and Workflow Engine (Phase 7)
+    # Note: Mode handlers (Phase 8) and LangGraph graphs (Phase 10) will be registered into these maps
+    mode_dispatcher = ModeDispatcher(handlers={}, graphs={})
+    workflow_engine = WorkflowEngine(mode_dispatcher=mode_dispatcher)
+    container.mode_dispatcher = mode_dispatcher
+    container.workflow_engine = workflow_engine
+
+    # 8. Initialize Kafka Producer & Consumer
     publisher = KafkaPublisher(config=config)
     chat_consumer = ChatConsumer()
     consumer_engine = KafkaConsumerEngine(

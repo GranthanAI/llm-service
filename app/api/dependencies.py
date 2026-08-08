@@ -17,6 +17,8 @@ from app.grpc.clients import (
 )
 from app.producers.kafka_producer import KafkaPublisher
 from app.request_analyzer.analyzer import RequestAnalyzer
+from app.workflow_engine.engine import WorkflowEngine
+from app.workflow_engine.mode_dispatcher import ModeDispatcher
 
 
 class Container:
@@ -45,10 +47,13 @@ class Container:
         # Request Analyzer (Phase 6)
         self.request_analyzer: RequestAnalyzer | None = None
 
-        # Placeholders for subsequent phases (Tools, Workflow Engine, Providers)
+        # Workflow Engine & Dispatcher (Phase 7)
+        self.mode_dispatcher: ModeDispatcher | None = None
+        self.workflow_engine: WorkflowEngine | None = None
+
+        # Placeholders for subsequent phases (Tools, Mode Handlers, Graphs, Providers)
         self.tool_registry: Any | None = None
         self.prompt_registry: Any | None = None
-        self.workflow_engine: Any | None = None
         self.generation_router: Any | None = None
 
     def mark_ready(self, ready: bool = True) -> None:
