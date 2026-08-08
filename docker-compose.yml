@@ -1,0 +1,23 @@
+services:
+  llm-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: graphgpt-llm-service
+    ports:
+      - "8000:8000"
+      - "9090:9090"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - KAFKA_BOOTSTRAP_SERVERS=graphgpt-kafka:9092
+    restart: unless-stopped
+    networks:
+      - graphgpt-net
+
+networks:
+  graphgpt-net:
+    name: graphgpt-net
+    driver: bridge
