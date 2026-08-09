@@ -65,6 +65,9 @@ class Container:
         self.context_window_manager: Any | None = None
 
         # Provider Adapters & Generation Router (Phase 15)
+        self.nvidia_adapter: Any | None = None
+        self.gemini_adapter: Any | None = None
+        self.groq_adapter: Any | None = None
         self.generation_router: Any | None = None
 
     def mark_ready(self, ready: bool = True) -> None:

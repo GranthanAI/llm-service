@@ -57,6 +57,16 @@ class CircuitBreaker:
                 return True
         return False
 
+    def trip(self) -> None:
+        """Manually trip circuit breaker to OPEN state."""
+        self.state = CircuitState.OPEN
+        self.last_failure_time = time.time()
+        try:
+            CIRCUIT_BREAKER_STATE.labels(name=self.name).set(2)
+        except Exception:
+            pass
+        self.logger.warning("Circuit breaker tripped to OPEN", name=self.name)
+
     async def on_success(self) -> None:
         """Handle successful call and transition state if applicable."""
         async with self._lock:

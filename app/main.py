@@ -34,6 +34,12 @@ from app.grpc.clients import (
 )
 from app.producers.kafka_producer import KafkaPublisher
 from app.prompts import PromptBuilder, PromptLoader, PromptRegistry
+from app.providers import (
+    GeminiAdapter,
+    GenerationRouter,
+    GroqAdapter,
+    NVIDIAAdapter,
+)
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
@@ -182,6 +188,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     workflow_engine = WorkflowEngine(mode_dispatcher=mode_dispatcher)
     container.mode_dispatcher = mode_dispatcher
     container.workflow_engine = workflow_engine
+
+    # 10. Initialize Provider Adapters & Generation Router (Phase 15)
+    nvidia_adapter = NVIDIAAdapter(
+        api_key=config.nvidia_api_key.get_secret_value(),
+        model=config.nvidia_model,
+    )
+    gemini_adapter = GeminiAdapter(
+        api_key=config.gemini_api_key.get_secret_value(),
+        model=config.gemini_model,
+    )
+    groq_adapter = GroqAdapter(
+        api_key=config.groq_api_key.get_secret_value(),
+        model=config.groq_model,
+    )
+    cb_nvidia = CircuitBreaker(
+        "nvidia",
+        config=CircuitBreakerConfig(failure_threshold=3, recovery_timeout_s=30),
+    )
+    cb_gemini = CircuitBreaker(
+        "gemini",
+        config=CircuitBreakerConfig(failure_threshold=3, recovery_timeout_s=30),
+    )
+    generation_router = GenerationRouter(
+        nvidia_adapter=nvidia_adapter,
+        gemini_adapter=gemini_adapter,
+        circuit_breakers={"nvidia": cb_nvidia, "gemini": cb_gemini},
+    )
+    container.nvidia_adapter = nvidia_adapter
+    container.gemini_adapter = gemini_adapter
+    container.groq_adapter = groq_adapter
+    container.generation_router = generation_router
 
     # 9. Initialize Kafka Producer & Consumer
     publisher = KafkaPublisher(config=config)

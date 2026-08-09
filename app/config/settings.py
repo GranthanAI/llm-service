@@ -61,7 +61,7 @@ class LLMServiceConfig(BaseSettings):
     nvidia_model: str = "meta/llama-3.1-70b-instruct"
 
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
-    gemini_model: str = "gemini-1.5-pro"
+    gemini_model: str = "gemini-2.5-flash"
 
     tavily_api_key: SecretStr = Field(default=SecretStr(""))
 

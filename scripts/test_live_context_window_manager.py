@@ -174,13 +174,17 @@ def main():
         custom_input_budget=350,
     )
     print(f"     Was Trimmed: {trimmed_constrained.was_trimmed}")
-    print(f"     Original Tokens: {trimmed_constrained.original_tokens} -> Final Tokens: {trimmed_constrained.total_tokens}")
+    print(
+        f"     Original Tokens: {trimmed_constrained.original_tokens} -> Final Tokens: {trimmed_constrained.total_tokens}"
+    )
     print(f"     Sections Trimmed: {trimmed_constrained.trimmed_sections}")
 
     # Case C: Extreme constraint testing ContextOverflowError
     print("\n   [Extreme Overflow Test] Simulating 100-token impossible limit...")
     try:
-        manager.manage(composed_prompt, target_model="meta/llama-3.1-405b-instruct", custom_input_budget=100)
+        manager.manage(
+            composed_prompt, target_model="meta/llama-3.1-405b-instruct", custom_input_budget=100
+        )
     except Exception as e:
         print(f"     Successfully caught expected overflow protection: {type(e).__name__} - {e}")
 
