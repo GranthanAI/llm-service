@@ -45,6 +45,7 @@ from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
 from app.utils.retry import RetryManager, RetryPolicy
 from app.utils.tracing import setup_tracing
 from app.workflow_engine.engine import WorkflowEngine
+from app.workflow_engine.langgraph_workflows.smart import SmartGraphBuilder
 from app.workflow_engine.mode_dispatcher import ModeDispatcher
 from app.workflow_engine.mode_handlers import (
     AskFilesHandler,
@@ -142,7 +143,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config=config,
     )
 
-    # 8. Initialize Deterministic Mode Handlers (Phase 8) & Mode Dispatcher (Phase 7)
+    # 8. Initialize Deterministic Mode Handlers (Phase 8), SmartGraph (Phase 11), & Mode Dispatcher (Phase 7)
     handlers = {
         "default": DefaultHandler(tool_dispatcher=tool_dispatcher),
         "tutor": TutorHandler(tool_dispatcher=tool_dispatcher),
@@ -150,7 +151,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "ask_files": AskFilesHandler(),
         "web_search": WebSearchHandler(tool_dispatcher=tool_dispatcher),
     }
-    mode_dispatcher = ModeDispatcher(handlers=handlers, graphs={})
+    smart_graph = SmartGraphBuilder(
+        tool_dispatcher=tool_dispatcher,
+        config=config,
+    ).build()
+    graphs = {
+        "smart": smart_graph,
+    }
+    mode_dispatcher = ModeDispatcher(handlers=handlers, graphs=graphs)
     workflow_engine = WorkflowEngine(mode_dispatcher=mode_dispatcher)
     container.mode_dispatcher = mode_dispatcher
     container.workflow_engine = workflow_engine

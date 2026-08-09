@@ -11,6 +11,7 @@ Queries live public endpoints to verify real answers from:
 """
 
 import asyncio
+
 import httpx
 
 from app.tools.search_providers import (
@@ -37,9 +38,9 @@ async def test_individual_providers():
     ]
 
     query = "FastAPI async python"
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"Testing All 7 Free Search Providers Live for: '{query}'")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
         for name, provider in providers:
@@ -49,20 +50,22 @@ async def test_individual_providers():
                 for idx, r in enumerate(results, 1):
                     print(f"   {idx}. {r.get('title')}")
                     print(f"      URL: {r.get('url')}")
-                    snippet = r.get('snippet', '')
+                    snippet = r.get("snippet", "")
                     print(f"      Snippet: {snippet[:120]}...\n")
             except Exception as e:
                 print(f"[{name}] -> Error: {e}\n")
 
 
 async def test_full_web_search_tool():
-    print(f"\n=======================================================")
-    print(f"Testing Full Parallel WebSearchTool Aggregation")
-    print(f"=======================================================\n")
+    print("\n=======================================================")
+    print("Testing Full Parallel WebSearchTool Aggregation")
+    print("=======================================================\n")
     from app.models.tool import ToolParams
 
     tool = WebSearchTool(timeout_ms=10000)
-    params = ToolParams(tool_name="web_search", params={"query": "Quantum computing algorithms", "max_results": 2})
+    params = ToolParams(
+        tool_name="web_search", params={"query": "Quantum computing algorithms", "max_results": 2}
+    )
     result = await tool.execute(params)
 
     print(f"Success: {result.success}")

@@ -106,3 +106,8 @@ class ContextBundle(BaseModel):
     degraded: bool = False
     missing_sources: list[str] = Field(default_factory=list)
     collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @classmethod
+    def empty(cls) -> "ContextBundle":
+        """Return an empty ContextBundle instance."""
+        return cls()

@@ -10,7 +10,6 @@ Enforces architectural boundaries specified in LLD v2.0 Section 2.2:
 """
 
 import ast
-import os
 import sys
 from pathlib import Path
 
@@ -48,7 +47,7 @@ RULES = [
 def check_file(file_path: Path, forbidden: list[str]) -> list[str]:
     violations = []
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             tree = ast.parse(f.read(), filename=str(file_path))
     except Exception as e:
         return [f"Failed to parse {file_path}: {e}"]
