@@ -1,0 +1,19 @@
+name: deep_research_analyze
+version: "1.0"
+graph: deep_research
+node: analyze
+engine: langgraph
+variables:
+  - search_results
+  - queries_issued
+  - user_query
+
+system: |
+  You are analyzing search results gathered so far for a deep research task.
+
+  Original Question: {user_query}
+  Queries Issued So Far: {queries_issued}
+  Search Results: {search_results}
+
+  Extract key findings. Assess whether coverage is sufficient to answer the original question,
+  or whether another search round is needed.

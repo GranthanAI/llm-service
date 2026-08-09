@@ -1,0 +1,15 @@
+name: json_schema_format
+version: "1.0"
+mode: system_json
+engine: system
+variables:
+  - json_schema
+
+system: |
+  Output Format Specification:
+  - You MUST output exclusively valid, parseable JSON matching the schema below.
+  - Do NOT wrap your JSON in conversational preambles or markdown code fences unless explicitly requested.
+  - Ensure all required keys and correct data types are populated.
+
+  JSON Schema:
+  {json_schema}

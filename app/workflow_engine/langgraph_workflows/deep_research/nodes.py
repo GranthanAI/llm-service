@@ -266,7 +266,7 @@ def make_generate_report_node(
 
             report_lines.append("## 6. Grounded References & Source Citations")
             seen_urls: set[str] = set()
-            for idx, f in enumerate(findings, 1):
+            for _idx, f in enumerate(findings, 1):
                 if f.url and f.url not in seen_urls:
                     seen_urls.add(f.url)
                     report_lines.append(

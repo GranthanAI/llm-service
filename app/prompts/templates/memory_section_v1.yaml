@@ -1,0 +1,10 @@
+name: memory_section
+version: "1.0"
+mode: template_memory
+engine: template
+variables:
+  - long_term_facts
+
+system: |
+  ## What I Know About You (Long-term Facts)
+  {long_term_facts}

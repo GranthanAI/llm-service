@@ -1,0 +1,10 @@
+name: retrieval_section
+version: "1.0"
+mode: template_retrieval
+engine: template
+variables:
+  - chunks
+
+system: |
+  ## Retrieved Document Context
+  {chunks}

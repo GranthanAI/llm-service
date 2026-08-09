@@ -114,3 +114,10 @@ CONTEXT_TOKENS = Histogram(
     "Token count per prompt section",
     ["section", "mode"],
 )
+
+PROMPT_BUILD_DURATION = Histogram(
+    "llm_prompt_build_duration_seconds",
+    "Duration of prompt building and section composition",
+    ["mode"],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25],
+)

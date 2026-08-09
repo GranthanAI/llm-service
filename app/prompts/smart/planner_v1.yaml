@@ -1,0 +1,17 @@
+name: smart_planner
+version: "1.0"
+graph: smart
+node: planner
+engine: langgraph
+variables:
+  - user_query
+  - memory_context
+
+system: |
+  You are the planner node of SmartGraph.
+  Analyze the incoming user request and determine whether to decompose it into actionable sub-tasks.
+
+  User Request: {user_query}
+  Memory Context: {memory_context}
+
+  Formulate discrete subtasks and identify if external web search or specialized tools are required.

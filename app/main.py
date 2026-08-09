@@ -32,6 +32,7 @@ from app.grpc.clients import (
     RetrievalServiceClient,
 )
 from app.producers.kafka_producer import KafkaPublisher
+from app.prompts import PromptBuilder, PromptLoader, PromptRegistry
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
@@ -146,11 +147,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config=config,
     )
 
-    # 8. Initialize Deterministic Mode Handlers (Phase 8), SmartGraph (Phase 11), & Mode Dispatcher (Phase 7)
+    # 8. Initialize Prompt Engine (Phase 13)
+    prompt_loader = PromptLoader()
+    prompt_registry = PromptRegistry(loader=prompt_loader)
+    prompt_builder = PromptBuilder(registry=prompt_registry)
+    container.prompt_registry = prompt_registry
+    container.prompt_builder = prompt_builder
+
+    # 9. Initialize Deterministic Mode Handlers (Phase 8), SmartGraph (Phase 11), & Mode Dispatcher (Phase 7)
     handlers = {
-        "default": DefaultHandler(tool_dispatcher=tool_dispatcher),
-        "tutor": TutorHandler(tool_dispatcher=tool_dispatcher),
-        "code": CodeHandler(tool_dispatcher=tool_dispatcher),
+        "default": DefaultHandler(tool_dispatcher=tool_dispatcher, prompt_registry=prompt_registry),
+        "tutor": TutorHandler(tool_dispatcher=tool_dispatcher, prompt_registry=prompt_registry),
+        "code": CodeHandler(tool_dispatcher=tool_dispatcher, prompt_registry=prompt_registry),
         "ask_files": AskFilesHandler(),
         "web_search": WebSearchHandler(tool_dispatcher=tool_dispatcher),
     }
@@ -160,6 +168,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ).build()
     deep_research_graph = DeepResearchGraphBuilder(
         tool_dispatcher=tool_dispatcher,
+        prompt_registry=prompt_registry,
         config=config,
     ).build()
     graphs = {

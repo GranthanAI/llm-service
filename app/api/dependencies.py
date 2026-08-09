@@ -57,8 +57,11 @@ class Container:
         self.mode_dispatcher: ModeDispatcher | None = None
         self.workflow_engine: WorkflowEngine | None = None
 
-        # Placeholders for subsequent phases (Prompt Registry, Providers, Router)
+        # Prompt Engine (Phase 13)
         self.prompt_registry: Any | None = None
+        self.prompt_builder: Any | None = None
+
+        # Provider Adapters & Generation Router (Phase 14)
         self.generation_router: Any | None = None
 
     def mark_ready(self, ready: bool = True) -> None:

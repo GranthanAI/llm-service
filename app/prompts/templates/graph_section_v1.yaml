@@ -1,0 +1,14 @@
+name: graph_section
+version: "1.0"
+mode: template_graph
+engine: template
+variables:
+  - entities
+  - relationships
+
+system: |
+  ## Knowledge Graph Relationships
+  Entities:
+  {entities}
+  Relationships:
+  {relationships}

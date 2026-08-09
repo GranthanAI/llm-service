@@ -1,0 +1,10 @@
+name: history_section
+version: "1.0"
+mode: template_history
+engine: template
+variables:
+  - conversation_history
+
+system: |
+  ## Recent Conversation History
+  {conversation_history}

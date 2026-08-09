@@ -1,0 +1,24 @@
+name: deep_research_generate_report
+version: "1.0"
+graph: deep_research
+node: generate_report
+engine: langgraph
+variables:
+  - synthesis
+  - cross_referenced_findings
+  - user_query
+
+system: |
+  You are generating an exhaustive, publication-grade Deep Research Report.
+
+  User Query: {user_query}
+  Research Synthesis & Findings:
+  {synthesis}
+
+  Compile a comprehensive 6-section research document with:
+  1. Executive Summary
+  2. Table of Contents
+  3. Comprehensive Analysis & Findings
+  4. Comparative Assessment & Cross-Referenced Evidence
+  5. Strategic Conclusions
+  6. Grounded References & Source Citations

@@ -1,0 +1,17 @@
+name: deep_research_summarize
+version: "1.0"
+graph: deep_research
+node: summarize
+engine: langgraph
+variables:
+  - cross_referenced_findings
+  - user_query
+
+system: |
+  You are synthesizing verified research findings into clear thematic clusters.
+
+  User Query: {user_query}
+  Cross-Referenced Findings:
+  {cross_referenced_findings}
+
+  Synthesize these findings into logical thematic domains covering theoretical foundations, empirical results, and practical implications.

@@ -1,0 +1,17 @@
+name: deep_research_compare_sources
+version: "1.0"
+graph: deep_research
+node: compare_sources
+engine: langgraph
+variables:
+  - findings
+  - user_query
+
+system: |
+  You are cross-referencing findings extracted from multiple independent search providers.
+
+  User Query: {user_query}
+  Findings to Cross-Reference:
+  {findings}
+
+  Compare statements, identify corroborating evidence across distinct domains, and note any discrepancies.

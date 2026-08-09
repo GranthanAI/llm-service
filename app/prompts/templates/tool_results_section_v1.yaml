@@ -1,0 +1,10 @@
+name: tool_results_section
+version: "1.0"
+mode: template_tool_results
+engine: template
+variables:
+  - tool_results
+
+system: |
+  ## Live Tool Execution Results
+  {tool_results}
