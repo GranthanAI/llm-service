@@ -61,7 +61,10 @@ class Container:
         self.prompt_registry: Any | None = None
         self.prompt_builder: Any | None = None
 
-        # Provider Adapters & Generation Router (Phase 14)
+        # Context Window Manager (Phase 14)
+        self.context_window_manager: Any | None = None
+
+        # Provider Adapters & Generation Router (Phase 15)
         self.generation_router: Any | None = None
 
     def mark_ready(self, ready: bool = True) -> None:
