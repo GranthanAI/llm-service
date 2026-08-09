@@ -1,6 +1,7 @@
 """
 Live Verification Script for Phase 15: Generation Router & Provider Adapters.
-Tests live streaming and execution with NVIDIA NIM (primary) and Google Gemini (fallback).
+Tests live streaming and execution with Groq, NVIDIA NIM (primary), and Google Gemini (fallback),
+loading all keys, models, and parameters directly from environment configuration.
 """
 
 import asyncio
@@ -38,19 +39,35 @@ async def main():
 
     config = get_settings()
 
-    # 1. Initialize Adapters
-    print("Stage 1: Initializing LLM Provider Adapters...")
+    # 1. Initialize Adapters with Config-driven parameters
+    print("Stage 1: Initializing LLM Provider Adapters from Environment Config...")
     nvidia_key = config.nvidia_api_key.get_secret_value()
     gemini_key = config.gemini_api_key.get_secret_value()
     groq_key = config.groq_api_key.get_secret_value()
 
-    print(f"   NVIDIA Key Present: {bool(nvidia_key)} | Model: {config.nvidia_model}")
-    print(f"   Gemini Key Present: {bool(gemini_key)} | Model: {config.gemini_model}")
-    print(f"   Groq Key Present:   {bool(groq_key)} | Model: {config.groq_model}\n")
+    print(f"   [NVIDIA NIM]  Model: {config.nvidia_model} | BaseURL: {config.nvidia_base_url}")
+    print(f"                 Temp: {config.nvidia_temperature} | TopP: {config.nvidia_top_p} | MaxTokens: {config.nvidia_max_tokens}")
+    print(f"   [Google GenAI] Model: {config.gemini_model} | Temp: {config.gemini_temperature} | TopP: {config.gemini_top_p} | MaxTokens: {config.gemini_max_tokens}")
+    print(f"   [Groq API]    Model: {config.groq_model} | Temp: {config.groq_temperature} | MaxTokens: {config.groq_max_tokens}\n")
 
-    nvidia_adapter = NVIDIAAdapter(api_key=nvidia_key, model=config.nvidia_model)
-    gemini_adapter = GeminiAdapter(api_key=gemini_key, model=config.gemini_model)
-    groq_adapter = GroqAdapter(api_key=groq_key, model=config.groq_model)
+    nvidia_adapter = NVIDIAAdapter(
+        api_key=nvidia_key,
+        model=config.nvidia_model,
+        base_url=config.nvidia_base_url,
+        timeout_s=config.nvidia_timeout_ms / 1000.0,
+        temperature=config.nvidia_temperature,
+        top_p=config.nvidia_top_p,
+        max_tokens=config.nvidia_max_tokens,
+    )
+    gemini_adapter = GeminiAdapter(
+        api_key=gemini_key,
+        model=config.gemini_model,
+    )
+    groq_adapter = GroqAdapter(
+        api_key=groq_key,
+        model=config.groq_model,
+        timeout_s=config.groq_timeout_ms / 1000.0,
+    )
 
     cb_nvidia = CircuitBreaker(
         "nvidia", CircuitBreakerConfig(failure_threshold=2, recovery_timeout_s=10)
@@ -65,8 +82,20 @@ async def main():
         circuit_breakers={"nvidia": cb_nvidia, "gemini": cb_gemini},
     )
 
-    # 2. Build Pipeline Context & Composed Prompt
-    print("Stage 2: Composing and trimming multi-source prompt...")
+    # 2. Test Groq Request Analyzer Execution
+    print("Stage 2: Live Testing Groq Request Analyzer (JSON Execution)...")
+    try:
+        groq_resp = await groq_adapter.execute(
+            messages=[{"role": "user", "content": "Return a JSON object with key 'status' and value 'operational'."}],
+            params={"response_format": {"type": "json_object"}},
+        )
+        print("   [Groq Live Output]:", groq_resp.content.strip())
+        print(f"   [Groq Tokens]: Prompt: {groq_resp.prompt_tokens} | Completion: {groq_resp.completion_tokens} | Total: {groq_resp.total_tokens}\n")
+    except Exception as exc:
+        print(f"   Groq execution failed: {exc}\n")
+
+    # 3. Build Pipeline Context & Composed Prompt
+    print("Stage 3: Composing and trimming multi-source prompt...")
     loader = PromptLoader()
     registry = PromptRegistry(loader=loader)
     builder = PromptBuilder(registry=registry)
@@ -155,8 +184,8 @@ async def main():
         f"   Composed Tokens: {composed_prompt.total_tokens} -> Managed Tokens: {trimmed_prompt.total_tokens}\n"
     )
 
-    # 3. Live Primary Generation (NVIDIA NIM)
-    print("Stage 3: Live Streaming Generation via Primary Adapter (NVIDIA NIM)...")
+    # 4. Live Primary Generation (NVIDIA NIM)
+    print("Stage 4: Live Streaming Generation via Primary Adapter (NVIDIA NIM)...")
     print("-" * 70)
     primary_output_tokens = []
     try:
@@ -168,8 +197,8 @@ async def main():
     except Exception as exc:
         print(f"\n   Primary generation encountered error: {exc}")
 
-    # 4. Live Fallback Generation (Simulated NVIDIA Circuit Trip -> Gemini)
-    print("\nStage 4: Testing Live Fallback to Google Gemini (Tripping NVIDIA Circuit Breaker)...")
+    # 5. Live Fallback Generation (Simulated NVIDIA Circuit Trip -> Gemini)
+    print("\nStage 5: Testing Live Fallback to Google Gemini (Tripping NVIDIA Circuit Breaker)...")
     cb_nvidia.trip()  # Manually open NVIDIA circuit breaker
     print(f"   NVIDIA Circuit Breaker is open: {cb_nvidia.is_open()}")
     print("-" * 70)

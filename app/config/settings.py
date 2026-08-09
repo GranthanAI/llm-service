@@ -47,10 +47,12 @@ class LLMServiceConfig(BaseSettings):
     grpc_deadline_ms: int = Field(default=2000, ge=500, le=30000)
     grpc_max_connections: int = 20
 
-    # Provider API Keys & Settings
+    # Provider API Keys & Hyperparameters
     groq_api_key: SecretStr = Field(default=SecretStr(""))
     groq_model: str = "llama-3.3-70b-versatile"
-    groq_timeout_ms: int = 3000
+    groq_timeout_ms: int = 5000
+    groq_temperature: float = 0.0
+    groq_max_tokens: int = 2048
 
     nvidia_api_key: SecretStr = Field(
         default=SecretStr(""),
@@ -58,10 +60,19 @@ class LLMServiceConfig(BaseSettings):
             "NVIDIA_API_KEY", "NVIDIA_KEY", "nvidia_api_key", "nvidia_key"
         ),
     )
-    nvidia_model: str = "meta/llama-3.1-70b-instruct"
+    nvidia_model: str = "meta/llama-3.3-70b-instruct"
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_timeout_ms: int = 30000
+    nvidia_temperature: float = 0.2
+    nvidia_top_p: float = 0.7
+    nvidia_max_tokens: int = 4096
 
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
     gemini_model: str = "gemini-2.5-flash"
+    gemini_timeout_ms: int = 15000
+    gemini_temperature: float = 0.7
+    gemini_top_p: float = 0.95
+    gemini_max_tokens: int = 8192
 
     tavily_api_key: SecretStr = Field(default=SecretStr(""))
 

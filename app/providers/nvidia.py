@@ -32,9 +32,12 @@ class NVIDIAAdapter(BaseProviderAdapter):
     def __init__(
         self,
         api_key: str,
-        model: str = "meta/llama-3.1-70b-instruct",
+        model: str = "meta/llama-3.3-70b-instruct",
         base_url: str = "https://integrate.api.nvidia.com/v1",
         timeout_s: float = 30.0,
+        temperature: float = 0.2,
+        top_p: float = 0.7,
+        max_tokens: int = 1024,
         client: AsyncOpenAI | None = None,
         logger_instance: structlog.stdlib.BoundLogger | None = None,
     ):
@@ -42,6 +45,9 @@ class NVIDIAAdapter(BaseProviderAdapter):
         self.api_key = api_key
         self.base_url = base_url
         self.timeout_s = timeout_s
+        self.default_temperature = temperature
+        self.default_top_p = top_p
+        self.default_max_tokens = max_tokens
         self.client = client or AsyncOpenAI(
             api_key=api_key or "not-set",
             base_url=base_url,
@@ -58,8 +64,9 @@ class NVIDIAAdapter(BaseProviderAdapter):
         """Executes a synchronous/complete completion request."""
         params = params or {}
         model = params.get("model", self.model_name)
-        temperature = params.get("temperature", 0.7)
-        max_tokens = params.get("max_tokens", 4096)
+        temperature = params.get("temperature", self.default_temperature)
+        top_p = params.get("top_p", self.default_top_p)
+        max_tokens = params.get("max_tokens", self.default_max_tokens)
 
         start_time = time.perf_counter()
         with self.tracer.start_as_current_span("nvidia.execute") as span:
@@ -71,6 +78,7 @@ class NVIDIAAdapter(BaseProviderAdapter):
                     model=model,
                     messages=messages,  # type: ignore[arg-type]
                     temperature=temperature,
+                    top_p=top_p,
                     max_tokens=max_tokens,
                     stream=False,
                 )
@@ -109,8 +117,9 @@ class NVIDIAAdapter(BaseProviderAdapter):
         """Streams tokens incrementally from NVIDIA NIM."""
         params = params or {}
         model = params.get("model", self.model_name)
-        temperature = params.get("temperature", 0.7)
-        max_tokens = params.get("max_tokens", 4096)
+        temperature = params.get("temperature", self.default_temperature)
+        top_p = params.get("top_p", self.default_top_p)
+        max_tokens = params.get("max_tokens", self.default_max_tokens)
 
         with self.tracer.start_as_current_span("nvidia.stream") as span:
             span.set_attribute("provider", "nvidia")
@@ -121,6 +130,7 @@ class NVIDIAAdapter(BaseProviderAdapter):
                     model=model,
                     messages=messages,  # type: ignore[arg-type]
                     temperature=temperature,
+                    top_p=top_p,
                     max_tokens=max_tokens,
                     stream=True,
                 )

@@ -193,6 +193,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     nvidia_adapter = NVIDIAAdapter(
         api_key=config.nvidia_api_key.get_secret_value(),
         model=config.nvidia_model,
+        base_url=config.nvidia_base_url,
+        timeout_s=config.nvidia_timeout_ms / 1000.0,
+        temperature=config.nvidia_temperature,
+        top_p=config.nvidia_top_p,
+        max_tokens=config.nvidia_max_tokens,
     )
     gemini_adapter = GeminiAdapter(
         api_key=config.gemini_api_key.get_secret_value(),
@@ -201,6 +206,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     groq_adapter = GroqAdapter(
         api_key=config.groq_api_key.get_secret_value(),
         model=config.groq_model,
+        timeout_s=config.groq_timeout_ms / 1000.0,
     )
     cb_nvidia = CircuitBreaker(
         "nvidia",
