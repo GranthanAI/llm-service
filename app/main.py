@@ -113,10 +113,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         merger=ContextMerger(),
     )
 
-    # 6. Initialize Tool Framework (Phase 9)
+    # 6. Initialize Tool Framework (Phase 9 & 10: Multi-source Web Search)
     tool_registry = ToolRegistry()
     web_search_tool = WebSearchTool(
-        api_key=config.tavily_api_key,
         timeout_ms=config.web_search_timeout_ms,
     )
     tool_registry.register(web_search_tool, enabled=config.enable_web_search)
