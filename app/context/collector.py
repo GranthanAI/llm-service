@@ -3,8 +3,11 @@ Baseline Context Collector with Parallel Scatter-Gather and Graceful Degradation
 Implements LLD v2.0 Section 9 and HLD v2.0 Section 8 & 14.
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -19,9 +22,11 @@ from app.context.schemas import (
 from app.grpc.clients.graph_client import GraphServiceClient
 from app.grpc.clients.memory_client import MemoryServiceClient
 from app.grpc.clients.retrieval_client import RetrievalServiceClient
-from app.models.pipeline_context import PipelineContext
 from app.utils.metrics import CONTEXT_DEGRADED_TOTAL, CONTEXT_FETCH_DURATION
 from app.utils.tracing import trace_span
+
+if TYPE_CHECKING:
+    from app.models.pipeline_context import PipelineContext
 
 
 class ContextCollector:

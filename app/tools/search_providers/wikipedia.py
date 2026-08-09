@@ -3,6 +3,7 @@ Wikipedia Search Provider.
 Uses MediaWiki API for English Wikipedia.
 """
 
+import html
 import re
 from typing import Any
 from urllib.parse import quote
@@ -43,7 +44,7 @@ class WikipediaProvider(BaseSearchProvider):
                 for item in items:
                     title = item.get("title", "")
                     raw_snippet = item.get("snippet", "")
-                    clean_snippet = re.sub(r"<[^>]+>", "", raw_snippet)
+                    clean_snippet = html.unescape(re.sub(r"<[^>]+>", "", raw_snippet)).strip()
                     page_url = f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
                     results.append(
                         {
