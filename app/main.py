@@ -35,6 +35,10 @@ from app.producers.kafka_producer import KafkaPublisher
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
+from app.tools.dispatcher import ToolDispatcher
+from app.tools.executor import ToolExecutor
+from app.tools.registry import ToolRegistry
+from app.tools.web_search import WebSearchTool
 from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from app.utils.helpers import generate_request_id
 from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
@@ -109,7 +113,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         merger=ContextMerger(),
     )
 
-    # 6. Initialize Request Analyzer (Phase 6)
+    # 6. Initialize Tool Framework (Phase 9)
+    tool_registry = ToolRegistry()
+    web_search_tool = WebSearchTool(
+        api_key=config.tavily_api_key,
+        timeout_ms=config.web_search_timeout_ms,
+    )
+    tool_registry.register(web_search_tool, enabled=config.enable_web_search)
+    tool_dispatcher = ToolDispatcher(registry=tool_registry, executor=ToolExecutor())
+    container.tool_registry = tool_registry
+    container.tool_dispatcher = tool_dispatcher
+
+    # 7. Initialize Request Analyzer (Phase 6)
     groq_client = GroqAnalysisClient(
         api_key=config.groq_api_key.get_secret_value() if config.groq_api_key else "",
         model=config.groq_model,
@@ -128,20 +143,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config=config,
     )
 
-    # 7. Initialize Deterministic Mode Handlers (Phase 8) & Mode Dispatcher (Phase 7)
+    # 8. Initialize Deterministic Mode Handlers (Phase 8) & Mode Dispatcher (Phase 7)
     handlers = {
-        "default": DefaultHandler(tool_dispatcher=container.tool_registry),
-        "tutor": TutorHandler(tool_dispatcher=container.tool_registry),
-        "code": CodeHandler(tool_dispatcher=container.tool_registry),
+        "default": DefaultHandler(tool_dispatcher=tool_dispatcher),
+        "tutor": TutorHandler(tool_dispatcher=tool_dispatcher),
+        "code": CodeHandler(tool_dispatcher=tool_dispatcher),
         "ask_files": AskFilesHandler(),
-        "web_search": WebSearchHandler(tool_dispatcher=container.tool_registry),
+        "web_search": WebSearchHandler(tool_dispatcher=tool_dispatcher),
     }
     mode_dispatcher = ModeDispatcher(handlers=handlers, graphs={})
     workflow_engine = WorkflowEngine(mode_dispatcher=mode_dispatcher)
     container.mode_dispatcher = mode_dispatcher
     container.workflow_engine = workflow_engine
 
-    # 8. Initialize Kafka Producer & Consumer
+    # 9. Initialize Kafka Producer & Consumer
     publisher = KafkaPublisher(config=config)
     chat_consumer = ChatConsumer()
     consumer_engine = KafkaConsumerEngine(
