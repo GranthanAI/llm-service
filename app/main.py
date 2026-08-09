@@ -45,7 +45,10 @@ from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
 from app.utils.retry import RetryManager, RetryPolicy
 from app.utils.tracing import setup_tracing
 from app.workflow_engine.engine import WorkflowEngine
-from app.workflow_engine.langgraph_workflows.smart import SmartGraphBuilder
+from app.workflow_engine.langgraph_workflows import (
+    DeepResearchGraphBuilder,
+    SmartGraphBuilder,
+)
 from app.workflow_engine.mode_dispatcher import ModeDispatcher
 from app.workflow_engine.mode_handlers import (
     AskFilesHandler,
@@ -155,8 +158,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tool_dispatcher=tool_dispatcher,
         config=config,
     ).build()
+    deep_research_graph = DeepResearchGraphBuilder(
+        tool_dispatcher=tool_dispatcher,
+        config=config,
+    ).build()
     graphs = {
         "smart": smart_graph,
+        "deep_research": deep_research_graph,
     }
     mode_dispatcher = ModeDispatcher(handlers=handlers, graphs=graphs)
     workflow_engine = WorkflowEngine(mode_dispatcher=mode_dispatcher)
