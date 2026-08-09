@@ -151,7 +151,8 @@ async def test_smart_graph_nodes():
         "loop_iteration_count": 1,
     }  # type: ignore
     gen_out = await generation_node(state_gen)
-    assert "Smart reasoning completed" in gen_out["draft_response"]
+    assert "Analysis & Synthesis" in gen_out["draft_response"]
+    assert "Executive Summary" in gen_out["draft_response"]
 
 
 # --- 3. End-to-End SmartGraph Invocation & Compilation Tests ---
