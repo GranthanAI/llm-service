@@ -124,7 +124,12 @@ class ErrorHandler:
                 user_message="Rate limit reached. Please wait a moment and try again.",
             )
 
-        if exc_type in ("TimeoutError", "ProviderTimeoutError", "GRPCTimeoutError", "ToolTimeoutError"):
+        if exc_type in (
+            "TimeoutError",
+            "ProviderTimeoutError",
+            "GRPCTimeoutError",
+            "ToolTimeoutError",
+        ):
             return ErrorClassification(
                 error_type=ErrorType.INFERENCE,
                 error_code="OPERATION_TIMEOUT",

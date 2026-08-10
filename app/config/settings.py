@@ -87,12 +87,42 @@ class LLMServiceConfig(BaseSettings):
     otel_endpoint: str = "http://localhost:4317"
     prometheus_port: int = 9090
 
-    # Feature Flags
-    enable_smart_mode: bool = True
-    enable_deep_research_mode: bool = True
-    enable_web_search: bool = True
-    feature_vision: bool = False
-    feature_grpc_keepalive: bool = True
+    # Feature Flags (LLD Section 25.3)
+    feature_smart_mode: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "FEATURE_SMART_MODE", "feature_smart_mode", "enable_smart_mode"
+        ),
+    )
+    feature_deep_research_mode: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "FEATURE_DEEP_RESEARCH_MODE",
+            "feature_deep_research_mode",
+            "enable_deep_research_mode",
+        ),
+    )
+    feature_web_search: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "FEATURE_WEB_SEARCH", "feature_web_search", "enable_web_search"
+        ),
+    )
+    feature_vision: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("FEATURE_VISION", "feature_vision"),
+    )
+    feature_grpc_keepalive: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FEATURE_GRPC_KEEPALIVE", "feature_grpc_keepalive"),
+    )
+
+    @field_validator("kafka_bootstrap_servers")
+    @classmethod
+    def validate_kafka_servers(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("kafka_bootstrap_servers cannot be empty")
+        return v.strip()
 
     @field_validator("log_level")
     @classmethod
@@ -102,6 +132,18 @@ class LLMServiceConfig(BaseSettings):
         if upper not in valid_levels:
             raise ValueError(f"Invalid log_level: {v}. Must be one of {valid_levels}")
         return upper
+
+    @property
+    def enable_smart_mode(self) -> bool:
+        return self.feature_smart_mode
+
+    @property
+    def enable_deep_research_mode(self) -> bool:
+        return self.feature_deep_research_mode
+
+    @property
+    def enable_web_search(self) -> bool:
+        return self.feature_web_search
 
 
 @lru_cache(maxsize=1)
