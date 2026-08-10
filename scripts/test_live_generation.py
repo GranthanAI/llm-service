@@ -46,9 +46,15 @@ async def main():
     groq_key = config.groq_api_key.get_secret_value()
 
     print(f"   [NVIDIA NIM]  Model: {config.nvidia_model} | BaseURL: {config.nvidia_base_url}")
-    print(f"                 Temp: {config.nvidia_temperature} | TopP: {config.nvidia_top_p} | MaxTokens: {config.nvidia_max_tokens}")
-    print(f"   [Google GenAI] Model: {config.gemini_model} | Temp: {config.gemini_temperature} | TopP: {config.gemini_top_p} | MaxTokens: {config.gemini_max_tokens}")
-    print(f"   [Groq API]    Model: {config.groq_model} | Temp: {config.groq_temperature} | MaxTokens: {config.groq_max_tokens}\n")
+    print(
+        f"                 Temp: {config.nvidia_temperature} | TopP: {config.nvidia_top_p} | MaxTokens: {config.nvidia_max_tokens}"
+    )
+    print(
+        f"   [Google GenAI] Model: {config.gemini_model} | Temp: {config.gemini_temperature} | TopP: {config.gemini_top_p} | MaxTokens: {config.gemini_max_tokens}"
+    )
+    print(
+        f"   [Groq API]    Model: {config.groq_model} | Temp: {config.groq_temperature} | MaxTokens: {config.groq_max_tokens}\n"
+    )
 
     nvidia_adapter = NVIDIAAdapter(
         api_key=nvidia_key,
@@ -86,11 +92,18 @@ async def main():
     print("Stage 2: Live Testing Groq Request Analyzer (JSON Execution)...")
     try:
         groq_resp = await groq_adapter.execute(
-            messages=[{"role": "user", "content": "Return a JSON object with key 'status' and value 'operational'."}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Return a JSON object with key 'status' and value 'operational'.",
+                }
+            ],
             params={"response_format": {"type": "json_object"}},
         )
         print("   [Groq Live Output]:", groq_resp.content.strip())
-        print(f"   [Groq Tokens]: Prompt: {groq_resp.prompt_tokens} | Completion: {groq_resp.completion_tokens} | Total: {groq_resp.total_tokens}\n")
+        print(
+            f"   [Groq Tokens]: Prompt: {groq_resp.prompt_tokens} | Completion: {groq_resp.completion_tokens} | Total: {groq_resp.total_tokens}\n"
+        )
     except Exception as exc:
         print(f"   Groq execution failed: {exc}\n")
 

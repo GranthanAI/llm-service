@@ -170,7 +170,9 @@ async def run_all_live():
 
     composed_prompt = builder.build(wf_res, ctx)
     trimmed_prompt = cwm.manage(composed_prompt, target_model=config.nvidia_model)
-    print(f"   Composed Tokens: {composed_prompt.total_tokens} -> Managed Tokens: {trimmed_prompt.total_tokens}")
+    print(
+        f"   Composed Tokens: {composed_prompt.total_tokens} -> Managed Tokens: {trimmed_prompt.total_tokens}"
+    )
 
     # -------------------------------------------------------------------------
     # 3. NVIDIA NIM (Primary Generation Adapter)
@@ -243,8 +245,12 @@ async def run_all_live():
     # 5. GENERATION ROUTER WITH CIRCUIT BREAKER FALLBACK
     # -------------------------------------------------------------------------
     print("\n[5/5] Testing Generation Router with Circuit Breaker Failover...")
-    cb_nvidia = CircuitBreaker("nvidia", CircuitBreakerConfig(failure_threshold=2, recovery_timeout_seconds=10))
-    cb_gemini = CircuitBreaker("gemini", CircuitBreakerConfig(failure_threshold=2, recovery_timeout_seconds=10))
+    cb_nvidia = CircuitBreaker(
+        "nvidia", CircuitBreakerConfig(failure_threshold=2, recovery_timeout_seconds=10)
+    )
+    cb_gemini = CircuitBreaker(
+        "gemini", CircuitBreakerConfig(failure_threshold=2, recovery_timeout_seconds=10)
+    )
     router = GenerationRouter(
         nvidia_adapter=nvidia_adapter,
         gemini_adapter=gemini_adapter,

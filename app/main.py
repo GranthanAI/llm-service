@@ -43,6 +43,7 @@ from app.providers import (
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
+from app.services.streaming_service import StreamingEngine
 from app.tools.dispatcher import ToolDispatcher
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
@@ -226,15 +227,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.groq_adapter = groq_adapter
     container.generation_router = generation_router
 
-    # 9. Initialize Kafka Producer & Consumer
+    # 11. Initialize Kafka Producer & Streaming Engine (Phase 16)
     publisher = KafkaPublisher(config=config)
+    streaming_engine = StreamingEngine(publisher=publisher)
+    container.kafka_producer = publisher
+    container.streaming_engine = streaming_engine
+
+    # 12. Initialize Kafka Consumer
     chat_consumer = ChatConsumer()
     consumer_engine = KafkaConsumerEngine(
         config=config,
         publisher=publisher,
         event_handler=chat_consumer.handle,
     )
-    container.kafka_producer = publisher
     container.kafka_consumer = consumer_engine
 
     if config.environment != "test":

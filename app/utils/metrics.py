@@ -59,6 +59,12 @@ TOKENS_TOTAL = Counter(
     ["provider", "token_type"],  # token_type: prompt | completion
 )
 
+STREAMING_CHUNKS_TOTAL = Counter(
+    "llm_streaming_chunks_total",
+    "Total streaming token chunks published to Kafka",
+    ["provider", "mode"],
+)
+
 COST_USD = Counter(
     "llm_cost_usd_total",
     "Total LLM cost in USD",

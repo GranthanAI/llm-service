@@ -70,6 +70,9 @@ class Container:
         self.groq_adapter: Any | None = None
         self.generation_router: Any | None = None
 
+        # Streaming Engine (Phase 16)
+        self.streaming_engine: Any | None = None
+
     def mark_ready(self, ready: bool = True) -> None:
         """Update readiness state for Kubernetes / readiness probes."""
         self.is_ready = ready
