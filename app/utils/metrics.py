@@ -19,6 +19,12 @@ REQUEST_DURATION = Histogram(
     buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
 )
 
+ERRORS_TOTAL = Counter(
+    "llm_errors_total",
+    "Total errors classified and handled",
+    ["error_type", "stage"],
+)
+
 # Workflow Engine dispatch metrics
 WORKFLOW_DISPATCH_TOTAL = Counter(
     "llm_workflow_engine_dispatch_total",

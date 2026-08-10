@@ -48,7 +48,12 @@ from app.tools.dispatcher import ToolDispatcher
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
 from app.tools.web_search import WebSearchTool
-from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from app.utils.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerRegistry,
+)
+from app.utils.error_handler import ErrorHandler
 from app.utils.helpers import generate_request_id
 from app.utils.metrics import REQUEST_DURATION, REQUESTS_TOTAL
 from app.utils.retry import RetryManager, RetryPolicy
@@ -209,14 +214,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model=config.groq_model,
         timeout_s=config.groq_timeout_ms / 1000.0,
     )
-    cb_nvidia = CircuitBreaker(
-        "nvidia",
-        config=CircuitBreakerConfig(failure_threshold=3, recovery_timeout_s=30),
+    # 10. Initialize Provider Adapters & Generation Router (Phase 15)
+    cb_registry = CircuitBreakerRegistry(
+        default_config=CircuitBreakerConfig(failure_threshold=3, recovery_timeout_seconds=30)
     )
-    cb_gemini = CircuitBreaker(
-        "gemini",
-        config=CircuitBreakerConfig(failure_threshold=3, recovery_timeout_s=30),
+    cb_nvidia = cb_registry.get_or_create("nvidia")
+    cb_gemini = cb_registry.get_or_create("gemini")
+    cb_groq = cb_registry.get_or_create("groq")
+    cb_registry.get_or_create("memory_service")
+    cb_registry.get_or_create("graph_service")
+    cb_registry.get_or_create("retrieval_service")
+    cb_registry.get_or_create("web_search")
+
+    retry_manager = RetryManager(
+        policy=RetryPolicy(max_attempts=3, initial_delay_ms=100, max_delay_ms=2000)
     )
+    error_handler = ErrorHandler()
+
+    container.circuit_breaker_registry = cb_registry
+    container.retry_manager = retry_manager
+    container.error_handler = error_handler
+
     generation_router = GenerationRouter(
         nvidia_adapter=nvidia_adapter,
         gemini_adapter=gemini_adapter,

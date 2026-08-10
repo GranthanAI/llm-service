@@ -1,5 +1,6 @@
 """
 Exceptions module exports.
+Implements LLD v2.0 Section 28.1 error taxonomy.
 """
 
 from app.exceptions.analysis import (
@@ -8,6 +9,12 @@ from app.exceptions.analysis import (
     CriticalAnalysisError,
     PlanParseError,
     UnknownModeError,
+)
+from app.exceptions.base import (
+    BaseLLMServiceError,
+    FatalError,
+    PermanentError,
+    RetriableError,
 )
 from app.exceptions.grpc import (
     GRPCError,
@@ -30,6 +37,10 @@ from app.exceptions.tool import (
 )
 
 __all__ = [
+    "BaseLLMServiceError",
+    "RetriableError",
+    "PermanentError",
+    "FatalError",
     "ProviderError",
     "AllProvidersFailedError",
     "ProviderTimeoutError",

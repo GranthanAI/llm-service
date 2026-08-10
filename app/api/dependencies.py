@@ -73,6 +73,11 @@ class Container:
         # Streaming Engine (Phase 16)
         self.streaming_engine: Any | None = None
 
+        # Reliability Layer (Phase 17)
+        self.circuit_breaker_registry: Any | None = None
+        self.retry_manager: Any | None = None
+        self.error_handler: Any | None = None
+
     def mark_ready(self, ready: bool = True) -> None:
         """Update readiness state for Kubernetes / readiness probes."""
         self.is_ready = ready
