@@ -29,6 +29,7 @@ class ChatMessageCreatedEvent(BaseModel):
     user_id: str
     content: str
     mode_hint: str | None = None
+    selected_tools: list[str] = Field(default_factory=list)
     file_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_context: TraceContext = Field(default_factory=TraceContext)

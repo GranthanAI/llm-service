@@ -264,3 +264,75 @@ async def test_publisher_raises_if_not_started():
 
     with pytest.raises(RuntimeError):
         await publisher.publish_response(ctx, full_response="Test response")
+
+
+# ---------------------------------------------------------------------------
+# 9. ChatConsumer -> RequestPipeline end-to-end (mocked internals)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_consumer_with_real_pipeline_publishes_chunk_and_generated():
+    """
+    ChatConsumer wired with a real RequestPipeline (mocked collector/analyzer/
+    workflow/prompt/context-window/router, real StreamingEngine + KafkaPublisher)
+    processes a chat.message.created event end-to-end into chat.response.chunk
+    and chat.response.generated publish calls — the previously-dead Kafka path.
+    """
+    from app.context.schemas import ContextBundle
+    from app.models.execution_plan import ExecutionPlan
+    from app.pipeline.request_pipeline import RequestPipeline
+    from app.services.streaming_service import StreamingEngine
+    from app.workflow_engine.workflow_result import WorkflowResult
+    from app.prompts.schemas import ComposedPrompt
+
+    publisher = _make_started_publisher()
+    streaming_engine = StreamingEngine(publisher=publisher)
+
+    context_collector = AsyncMock()
+    context_collector.collect.return_value = ContextBundle()
+
+    request_analyzer = AsyncMock()
+    request_analyzer.analyze.return_value = ExecutionPlan()
+
+    workflow_engine = AsyncMock()
+    workflow_engine.execute.return_value = WorkflowResult(
+        mode="default", engine_type="mode_handler", draft_content=None, user_message="Hi"
+    )
+
+    prompt_builder = MagicMock()
+    prompt_builder.build.return_value = ComposedPrompt(
+        mode="default", engine_type="mode_handler", messages=[{"role": "user", "content": "hi"}]
+    )
+
+    context_window_manager = MagicMock()
+    context_window_manager.manage.return_value = MagicMock()
+
+    async def fake_stream(*_args, **_kwargs):
+        for tok in ["Hi", " there"]:
+            yield tok
+
+    generation_router = MagicMock()
+    generation_router.generate_stream = MagicMock(side_effect=lambda *a, **k: fake_stream())
+
+    pipeline = RequestPipeline(
+        context_collector=context_collector,
+        request_analyzer=request_analyzer,
+        workflow_engine=workflow_engine,
+        prompt_builder=prompt_builder,
+        context_window_manager=context_window_manager,
+        generation_router=generation_router,
+        streaming_engine=streaming_engine,
+        publisher=publisher,
+    )
+
+    consumer = ChatConsumer(pipeline=pipeline)
+    event = ChatMessageCreatedEvent.model_validate(_make_valid_event_payload())
+
+    await consumer.handle(event)
+
+    published_topics = [
+        call.kwargs.get("topic") for call in publisher._producer.send_and_wait.call_args_list
+    ]
+    assert publisher.config.kafka_chunk_topic in published_topics
+    assert publisher.config.kafka_output_topic in published_topics

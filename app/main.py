@@ -32,6 +32,7 @@ from app.grpc.clients import (
     MemoryServiceClient,
     RetrievalServiceClient,
 )
+from app.pipeline.request_pipeline import RequestPipeline
 from app.producers.kafka_producer import KafkaPublisher
 from app.prompts import PromptBuilder, PromptLoader, PromptRegistry
 from app.providers import (
@@ -142,6 +143,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.tool_dispatcher = tool_dispatcher
 
     # 7. Initialize Request Analyzer (Phase 6)
+    # NVIDIA adapter is constructed here (ahead of its normal Phase 15 slot
+    # below) so it can be injected as the Request Analyzer's fallback when
+    # Groq analysis fails, before giving up to the heuristic SafeDefaultPlan.
+    # This is the analysis-only fallback — Generation Router's provider order
+    # (NVIDIA primary / Gemini fallback, or Groq primary when ENABLE_NVIDIA is
+    # false) is unrelated and unaffected.
+    nvidia_adapter = NVIDIAAdapter(
+        api_key=config.nvidia_api_key.get_secret_value(),
+        model=config.nvidia_model,
+        base_url=config.nvidia_base_url,
+        timeout_s=config.nvidia_timeout_ms / 1000.0,
+        temperature=config.nvidia_temperature,
+        top_p=config.nvidia_top_p,
+        max_tokens=config.nvidia_max_tokens,
+    )
     groq_client = GroqAnalysisClient(
         api_key=config.groq_api_key.get_secret_value() if config.groq_api_key else "",
         model=config.groq_model,
@@ -158,6 +174,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             policy=RetryPolicy(max_attempts=2, initial_delay_ms=50, max_delay_ms=200)
         ),
         config=config,
+        nvidia_adapter=nvidia_adapter,
     )
 
     # 8. Initialize Prompt Engine (Phase 13) & Context Window Manager (Phase 14)
@@ -196,15 +213,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.workflow_engine = workflow_engine
 
     # 10. Initialize Provider Adapters & Generation Router (Phase 15)
-    nvidia_adapter = NVIDIAAdapter(
-        api_key=config.nvidia_api_key.get_secret_value(),
-        model=config.nvidia_model,
-        base_url=config.nvidia_base_url,
-        timeout_s=config.nvidia_timeout_ms / 1000.0,
-        temperature=config.nvidia_temperature,
-        top_p=config.nvidia_top_p,
-        max_tokens=config.nvidia_max_tokens,
-    )
+    # nvidia_adapter was already constructed above (Phase 6) so it could be
+    # injected into the Request Analyzer's fallback — reused here as-is.
     gemini_adapter = GeminiAdapter(
         api_key=config.gemini_api_key.get_secret_value(),
         model=config.gemini_model,
@@ -235,10 +245,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.retry_manager = retry_manager
     container.error_handler = error_handler
 
+    # ENABLE_NVIDIA toggle: when true, NVIDIA is the primary generation
+    # provider (HLD default). When false, Groq is used as the primary
+    # generation provider instead (e.g. NVIDIA model unavailable / Gemini
+    # key revoked) — Gemini remains the fallback slot either way.
+    # Note: GenerationRouter's internal circuit-breaker/metric labels are
+    # hardcoded to the key "nvidia" for the primary slot regardless of which
+    # adapter actually occupies it.
+    if config.enable_nvidia:
+        primary_adapter, primary_cb = nvidia_adapter, cb_nvidia
+    else:
+        primary_adapter, primary_cb = groq_adapter, cb_groq
+
     generation_router = GenerationRouter(
-        nvidia_adapter=nvidia_adapter,
+        nvidia_adapter=primary_adapter,
         gemini_adapter=gemini_adapter,
-        circuit_breakers={"nvidia": cb_nvidia, "gemini": cb_gemini},
+        circuit_breakers={"nvidia": primary_cb, "gemini": cb_gemini},
     )
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter
@@ -252,7 +274,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.streaming_engine = streaming_engine
 
     # 12. Initialize Kafka Consumer
-    chat_consumer = ChatConsumer()
+    request_pipeline = RequestPipeline(
+        context_collector=container.context_collector,
+        request_analyzer=container.request_analyzer,
+        workflow_engine=workflow_engine,
+        prompt_builder=prompt_builder,
+        context_window_manager=context_window_manager,
+        generation_router=generation_router,
+        streaming_engine=streaming_engine,
+        publisher=publisher,
+        config=config,
+    )
+    container.request_pipeline = request_pipeline
+    chat_consumer = ChatConsumer(pipeline=request_pipeline)
     consumer_engine = KafkaConsumerEngine(
         config=config,
         publisher=publisher,

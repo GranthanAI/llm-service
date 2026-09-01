@@ -214,6 +214,24 @@ class KafkaPublisher:
             provider=ctx.selected_provider,
         )
 
+    async def publish_error_response(
+        self, ctx: PipelineContext, event: ChatResponseGeneratedEvent
+    ) -> None:
+        """Publish an error-variant chat.response.generated event so the caller is never left waiting."""
+        await self._send(
+            topic=self.config.kafka_output_topic,
+            key=ctx.conversation_id,
+            payload=event,
+            trace_context=TraceContext(traceparent=ctx.trace_id),
+            correlation_id=ctx.request_id,
+        )
+        self.logger.warning(
+            "Published error response event",
+            conversation_id=ctx.conversation_id,
+            message_id=ctx.message_id,
+            error_code=event.error_code,
+        )
+
     async def publish_memory_update(self, ctx: PipelineContext, full_response: str) -> None:
         """Publish memory.update.requested event to trigger async memory synthesis."""
         mode_val = (
