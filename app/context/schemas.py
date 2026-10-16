@@ -80,9 +80,11 @@ class DocumentChunk(BaseModel):
 
     chunk_id: str
     file_id: str
+    source_name: str = ""
     content: str
     score: float = 0.0
     page_number: int | None = None
+    section: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

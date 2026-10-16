@@ -174,6 +174,7 @@ async def test_context_collector_graceful_degradation_single_failure(
         message_id="msg_300",
         request_id="req_400",
         user_message="Explain relativity",
+        file_ids=["f1"],
     )
 
     bundle = await collector.collect(ctx)
@@ -214,6 +215,7 @@ async def test_context_collector_graceful_degradation_all_services_fail():
         message_id="msg_300",
         request_id="req_400",
         user_message="Explain relativity",
+        file_ids=["f1"],
     )
 
     # Must never raise an exception
@@ -235,3 +237,18 @@ def test_context_merger_empty_inputs():
     assert bundle.memory is None
     assert bundle.graph is None
     assert bundle.retrieval is None
+
+
+class TestRetrievalSkippedWithoutFiles:
+    async def test_no_file_ids_skips_retrieval_rpc(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.context.collector import ContextCollector
+
+        retrieval = MagicMock()
+        retrieval.get_relevant_chunks = AsyncMock()
+        collector = ContextCollector(memory_client=MagicMock(), graph_client=MagicMock(), retrieval_client=retrieval)
+        ctx = MagicMock(file_ids=[], user_message="hi", user_id="u", conversation_id="c", trace_id="t")
+
+        assert await collector._fetch_retrieval(ctx) is None
+        retrieval.get_relevant_chunks.assert_not_called()

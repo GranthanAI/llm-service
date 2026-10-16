@@ -251,7 +251,11 @@ class PromptBuilder:
         """Formats document retrieval chunks."""
         lines = ["## Retrieved Document Context"]
         for idx, chunk in enumerate(retrieval.chunks, 1):
-            source_info = f" (Source: {chunk.file_id})" if chunk.file_id else ""
+            name = chunk.source_name or chunk.file_id
+            location = ", ".join(
+                filter(None, [f"p. {chunk.page_number}" if chunk.page_number is not None else "", chunk.section])
+            )
+            source_info = f" (Source: {name}{', ' + location if location else ''})" if name else ""
             lines.append(f"[{idx}]{source_info} {chunk.content.strip()}")
         return "\n".join(lines)
 

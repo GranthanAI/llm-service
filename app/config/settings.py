@@ -43,7 +43,7 @@ class LLMServiceConfig(BaseSettings):
     graph_service_host: str = "localhost"
     graph_service_port: int = 50052
     retrieval_service_host: str = "localhost"
-    retrieval_service_port: int = 50053
+    retrieval_service_port: int = 50060
     grpc_deadline_ms: int = Field(default=2000, ge=500, le=30000)
     grpc_max_connections: int = 20
 

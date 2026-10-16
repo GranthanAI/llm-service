@@ -26,6 +26,30 @@ from app.models.response import (
 from app.utils.retry import RetryManager, RetryPolicy
 
 
+def _build_citations(ctx: PipelineContext) -> list[dict[str, Any]]:
+    """Distinct (file, page, section) sources of the retrieved chunks, in
+    relevance order, for the frontend to render next to the answer."""
+    bundle = ctx.context_bundle
+    if not bundle or not bundle.retrieval:
+        return []
+    seen: set[tuple[str, int | None, str]] = set()
+    citations: list[dict[str, Any]] = []
+    for chunk in bundle.retrieval.chunks:
+        key = (chunk.file_id, chunk.page_number, chunk.section)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(
+            {
+                "file_id": chunk.file_id,
+                "source_name": chunk.source_name,
+                "page_number": chunk.page_number,
+                "section": chunk.section,
+            }
+        )
+    return citations
+
+
 class KafkaPublisher:
     """
     Centralized Kafka Event Publisher.
@@ -189,11 +213,14 @@ class KafkaPublisher:
                         "memory" if ctx.context_bundle and ctx.context_bundle.memory else None,
                         "graph" if ctx.context_bundle and ctx.context_bundle.graph else None,
                         "retrieval"
-                        if ctx.context_bundle and ctx.context_bundle.retrieval
+                        if ctx.context_bundle
+                        and ctx.context_bundle.retrieval
+                        and ctx.context_bundle.retrieval.chunks
                         else None,
                     ],
                 )
             ),
+            citations=_build_citations(ctx),
             trace_context=TraceContext(traceparent=ctx.trace_id),
             status="success",
             timestamp=datetime.now(UTC),

@@ -148,15 +148,22 @@ class ContextCollector:
         finally:
             CONTEXT_FETCH_DURATION.labels(source="graph").observe(time.perf_counter() - start_time)
 
-    async def _fetch_retrieval(self, ctx: PipelineContext) -> RetrievalContext:
-        """Fetch retrieval chunks via gRPC."""
+    async def _fetch_retrieval(self, ctx: PipelineContext) -> RetrievalContext | None:
+        """Fetch retrieval chunks via gRPC.
+
+        Retrieval only searches explicitly attached files (scope FILES); ALL /
+        KNOWLEDGE_BASE are unsupported server-side. With no attached files there
+        is nothing to search, so skip the RPC (and its unsupported-scope metric).
+        """
+        if not ctx.file_ids:
+            return None
         start_time = time.perf_counter()
         try:
             res = await self.retrieval_client.get_relevant_chunks(
                 user_id=ctx.user_id,
                 conversation_id=ctx.conversation_id,
                 query=ctx.user_message,
-                file_ids=ctx.file_ids if ctx.file_ids else None,
+                file_ids=ctx.file_ids,
                 trace_id=ctx.trace_id,
             )
             return res
