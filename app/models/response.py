@@ -5,6 +5,7 @@ Implements HLD v2.0 Section 26.3 and LLD v2.0 Section 7, 14.6, 21.
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -89,6 +90,7 @@ class ChatResponseGeneratedEvent(BaseModel):
     finish_reason: str = "stop"
     tools_used: list[str] = Field(default_factory=list)
     context_sources: list[str] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
     trace_context: TraceContext = Field(default_factory=TraceContext)
     status: str = "success"  # "success" | "error"
     error_code: str | None = None

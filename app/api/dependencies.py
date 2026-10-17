@@ -73,6 +73,9 @@ class Container:
         # Streaming Engine (Phase 16)
         self.streaming_engine: Any | None = None
 
+        # Request Pipeline Orchestrator
+        self.request_pipeline: Any | None = None
+
         # Reliability Layer (Phase 17)
         self.circuit_breaker_registry: Any | None = None
         self.retry_manager: Any | None = None

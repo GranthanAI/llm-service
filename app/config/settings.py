@@ -43,13 +43,13 @@ class LLMServiceConfig(BaseSettings):
     graph_service_host: str = "localhost"
     graph_service_port: int = 50052
     retrieval_service_host: str = "localhost"
-    retrieval_service_port: int = 50053
+    retrieval_service_port: int = 50060
     grpc_deadline_ms: int = Field(default=2000, ge=500, le=30000)
     grpc_max_connections: int = 20
 
     # Provider API Keys & Hyperparameters
     groq_api_key: SecretStr = Field(default=SecretStr(""))
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"
     groq_timeout_ms: int = 5000
     groq_temperature: float = 0.0
     groq_max_tokens: int = 2048
@@ -60,7 +60,7 @@ class LLMServiceConfig(BaseSettings):
             "NVIDIA_API_KEY", "NVIDIA_KEY", "nvidia_api_key", "nvidia_key"
         ),
     )
-    nvidia_model: str = "meta/llama-3.3-70b-instruct"
+    nvidia_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_timeout_ms: int = 30000
     nvidia_temperature: float = 0.2
@@ -86,6 +86,15 @@ class LLMServiceConfig(BaseSettings):
     # Observability
     otel_endpoint: str = "http://localhost:4317"
     prometheus_port: int = 9090
+
+    # Generation provider toggle: when true, NVIDIA NIM is the primary
+    # generation provider (Gemini fallback) as per the HLD default. When
+    # false, Groq is used as the generation provider instead (e.g. when
+    # NVIDIA's configured model is unavailable / Gemini's key is revoked).
+    enable_nvidia: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ENABLE_NVIDIA", "enable_nvidia"),
+    )
 
     # Feature Flags (LLD Section 25.3)
     feature_smart_mode: bool = Field(

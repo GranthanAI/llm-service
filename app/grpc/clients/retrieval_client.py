@@ -62,16 +62,22 @@ class RetrievalServiceClient(BaseGRPCClient[retrieval_pb2_grpc.RetrievalServiceS
                 timeout=timeout,
             )
 
-            chunks = [
-                DocumentChunk(
-                    chunk_id=chunk.chunk_id,
-                    file_id=chunk.source_file_id,
-                    content=chunk.content,
-                    score=round(float(chunk.relevance_score), 4),
-                    metadata=dict(chunk.metadata),
+            chunks = []
+            for chunk in resp.chunks:
+                metadata = dict(chunk.metadata)
+                page = metadata.get("page_number", "")
+                chunks.append(
+                    DocumentChunk(
+                        chunk_id=chunk.chunk_id,
+                        file_id=chunk.source_file_id,
+                        source_name=chunk.source_name,
+                        content=chunk.content,
+                        score=round(float(chunk.relevance_score), 4),
+                        page_number=int(page) if page.isdigit() else None,
+                        section=metadata.get("section", ""),
+                        metadata=metadata,
+                    )
                 )
-                for chunk in resp.chunks
-            ]
 
             return RetrievalContext(
                 chunks=chunks,

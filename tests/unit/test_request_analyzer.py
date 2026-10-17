@@ -225,6 +225,94 @@ async def test_request_analyzer_fallback_on_groq_outage(sample_pipeline_ctx: Pip
 
 
 @pytest.mark.asyncio
+async def test_request_analyzer_nvidia_fallback_on_groq_outage(sample_pipeline_ctx: PipelineContext):
+    """When Groq fails and an NVIDIA adapter is configured, retries analysis via NVIDIA."""
+    mock_groq = AsyncMock()
+    mock_groq.complete.side_effect = ProviderError("Groq service outage", provider="groq")
+
+    valid_plan_json = json.dumps(
+        {
+            "intent": "GENERAL_CHAT",
+            "mode": "default",
+            "skill": "general_chat",
+            "reasoning": "DIRECT",
+            "tools": [],
+            "max_iterations": 1,
+            "suggested_temperature": 0.5,
+            "analysis_confidence": 0.8,
+        }
+    )
+    mock_nvidia = AsyncMock()
+    mock_response = AsyncMock()
+    mock_response.content = valid_plan_json
+    mock_response.model = "nvidia/nemotron-3.5-lightning-30b-a3b"
+    mock_nvidia.execute.return_value = mock_response
+
+    analyzer = RequestAnalyzer(groq_client=mock_groq, nvidia_adapter=mock_nvidia)
+    plan = await analyzer.analyze(sample_pipeline_ctx)
+
+    assert isinstance(plan, ExecutionPlan)
+    assert not isinstance(plan, SafeDefaultPlan)
+    assert plan.mode == UserMode.DEFAULT
+    assert plan.groq_model_used == "nvidia/nemotron-3.5-lightning-30b-a3b"
+    mock_nvidia.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_request_analyzer_nvidia_fallback_strips_reasoning_text(
+    sample_pipeline_ctx: PipelineContext,
+):
+    """NVIDIA reasoning models may prepend chain-of-thought text before the JSON object."""
+    mock_groq = AsyncMock()
+    mock_groq.complete.side_effect = ProviderError("Groq service outage", provider="groq")
+
+    plan_json = json.dumps(
+        {
+            "intent": "GENERAL_CHAT",
+            "mode": "default",
+            "skill": "general_chat",
+            "reasoning": "DIRECT",
+            "tools": [],
+            "max_iterations": 1,
+        }
+    )
+    wrapped = f"Let me think step by step about this request...\n\n{plan_json}"
+
+    mock_nvidia = AsyncMock()
+    mock_response = AsyncMock()
+    mock_response.content = wrapped
+    mock_response.model = "nvidia/nemotron-3.5-lightning-30b-a3b"
+    mock_nvidia.execute.return_value = mock_response
+
+    analyzer = RequestAnalyzer(groq_client=mock_groq, nvidia_adapter=mock_nvidia)
+    plan = await analyzer.analyze(sample_pipeline_ctx)
+
+    assert isinstance(plan, ExecutionPlan)
+    assert not isinstance(plan, SafeDefaultPlan)
+    assert plan.mode == UserMode.DEFAULT
+
+
+@pytest.mark.asyncio
+async def test_request_analyzer_falls_back_to_safe_default_when_nvidia_also_fails(
+    sample_pipeline_ctx: PipelineContext,
+):
+    """If both Groq and the NVIDIA fallback fail, still returns a valid SafeDefaultPlan."""
+    mock_groq = AsyncMock()
+    mock_groq.complete.side_effect = ProviderError("Groq service outage", provider="groq")
+
+    mock_nvidia = AsyncMock()
+    mock_nvidia.execute.side_effect = ProviderError("NVIDIA also down", provider="nvidia")
+
+    analyzer = RequestAnalyzer(groq_client=mock_groq, nvidia_adapter=mock_nvidia)
+    plan = await analyzer.analyze(sample_pipeline_ctx)
+
+    assert isinstance(plan, SafeDefaultPlan)
+    assert plan.mode == UserMode.DEFAULT
+    assert plan.analysis_confidence == 0.0
+    mock_nvidia.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_circuit_breaker_transitions():
     """Verify CircuitBreaker state transitions: CLOSED -> OPEN -> HALF_OPEN -> CLOSED."""
     cb = CircuitBreaker(

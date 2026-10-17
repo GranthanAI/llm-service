@@ -26,7 +26,7 @@ class GroqAnalysisClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "openai/gpt-oss-20b",
         timeout_ms: int = 3000,
         client: AsyncGroq | None = None,
         logger: structlog.stdlib.BoundLogger | None = None,

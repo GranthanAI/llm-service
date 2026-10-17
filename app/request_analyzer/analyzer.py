@@ -13,6 +13,7 @@ from app.config.logging import get_logger
 from app.config.settings import LLMServiceConfig, get_settings
 from app.models.execution_plan import ExecutionPlan, UserMode
 from app.models.pipeline_context import PipelineContext
+from app.providers.nvidia import NVIDIAAdapter
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
 from app.request_analyzer.safe_default import SafeDefaultFactory
@@ -25,7 +26,11 @@ class RequestAnalyzer:
     """
     Unified Request Analysis and Planning Engine.
     Executes Call 1 (Groq JSON mode) to produce authoritative ExecutionPlan.
-    Applies safety overrides and falls back to SafeDefaultPlan if Groq fails.
+    If Groq fails, attempts the same analysis via NVIDIA (when configured) as
+    an intermediate fallback before giving up to the heuristic SafeDefaultPlan.
+    Groq remains the sole provider used for generation-router chat replies is
+    untouched by this — this fallback applies only to the planning/analysis
+    call, never to response generation.
     """
 
     def __init__(
@@ -35,6 +40,7 @@ class RequestAnalyzer:
         circuit_breaker: CircuitBreaker | None = None,
         retry_manager: RetryManager | None = None,
         config: LLMServiceConfig | None = None,
+        nvidia_adapter: NVIDIAAdapter | None = None,
         logger: structlog.stdlib.BoundLogger | None = None,
     ):
         self.groq_client: GroqAnalysisClient = groq_client
@@ -47,6 +53,7 @@ class RequestAnalyzer:
             policy=RetryPolicy(max_attempts=2, initial_delay_ms=50, max_delay_ms=200)
         )
         self.config: LLMServiceConfig = config or get_settings()
+        self.nvidia_adapter: NVIDIAAdapter | None = nvidia_adapter
         self.logger = logger or get_logger("request_analyzer")
 
     @trace_span("request_analyzer_analyze")
@@ -58,56 +65,103 @@ class RequestAnalyzer:
         """
         Analyze request context and produce ExecutionPlan.
         Guaranteed to return a valid ExecutionPlan (never raises).
+        Tries Groq first; if that fails and an NVIDIA adapter is configured,
+        retries the same analysis via NVIDIA before giving up to SafeDefaultPlan.
         """
         start_time = time.perf_counter()
         messages = self.prompt_builder.build_prompt(ctx, tools_schema)
+        groq_exc: Exception | None = None
 
         try:
-            # Execute Groq call protected by Circuit Breaker and Retries
-            async with self.circuit_breaker.call():
-
-                async def _call_groq():
-                    return await self.groq_client.complete(messages=messages)
-
-                raw_json = await self.retry_manager.execute_with_retry(
-                    _call_groq,
-                    operation_name="groq_request_analysis",
-                    provider="groq",
-                )
-
-            latency_ms = (time.perf_counter() - start_time) * 1000.0
-
-            # Parse JSON and validate schema
-            plan_dict = json.loads(raw_json)
-            plan = ExecutionPlan.model_validate(plan_dict)
-            plan.groq_model_used = self.groq_client.model
-            plan.analysis_latency_ms = latency_ms
-
-            # Apply strict safety overrides (LLD v2.0 Section 10.3)
-            plan = self._apply_safety_overrides(plan, ctx)
-
+            raw_json = await self._call_groq(messages)
+            plan = self._finalize_plan(raw_json, start_time, ctx, model_used=self.groq_client.model)
             self.logger.info(
                 "Request analysis completed",
+                provider="groq",
                 mode=plan.mode.value,
                 intent=plan.intent.value,
                 skill=plan.skill.value,
                 tools_count=len(plan.tools),
-                latency_ms=round(latency_ms, 2),
+                latency_ms=round(plan.analysis_latency_ms, 2),
             )
             return plan
-
         except Exception as exc:
-            latency_ms = (time.perf_counter() - start_time) * 1000.0
+            groq_exc = exc
             self.logger.warning(
-                "Request analysis failed — falling back to SafeDefaultPlan",
+                "Groq request analysis failed",
                 error=str(exc),
-                latency_ms=round(latency_ms, 2),
                 conversation_id=ctx.conversation_id,
             )
-            fallback_plan = SafeDefaultFactory.create(
-                latency_ms=latency_ms, reason=type(exc).__name__
+
+        if self.nvidia_adapter is not None:
+            try:
+                response = await self.nvidia_adapter.execute(messages)
+                plan = self._finalize_plan(
+                    response.content, start_time, ctx, model_used=response.model
+                )
+                self.logger.info(
+                    "Request analysis completed via NVIDIA fallback",
+                    provider="nvidia",
+                    mode=plan.mode.value,
+                    intent=plan.intent.value,
+                    skill=plan.skill.value,
+                    tools_count=len(plan.tools),
+                    latency_ms=round(plan.analysis_latency_ms, 2),
+                )
+                return plan
+            except Exception as nvidia_exc:
+                self.logger.warning(
+                    "NVIDIA request analysis fallback also failed — using SafeDefaultPlan",
+                    error=str(nvidia_exc),
+                    conversation_id=ctx.conversation_id,
+                )
+
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return SafeDefaultFactory.create(latency_ms=latency_ms, reason=type(groq_exc).__name__)
+
+    async def _call_groq(self, messages: list[dict[str, str]]) -> str:
+        """Executes the Groq analysis call protected by Circuit Breaker and Retries."""
+        async with self.circuit_breaker.call():
+
+            async def _do_call():
+                return await self.groq_client.complete(messages=messages)
+
+            return await self.retry_manager.execute_with_retry(
+                _do_call,
+                operation_name="groq_request_analysis",
+                provider="groq",
             )
-            return fallback_plan
+
+    def _finalize_plan(
+        self,
+        raw_json: str,
+        start_time: float,
+        ctx: PipelineContext,
+        model_used: str,
+    ) -> ExecutionPlan:
+        """Parses the raw JSON plan, validates it, and applies safety overrides."""
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        plan_dict = json.loads(self._extract_json_object(raw_json))
+        plan = ExecutionPlan.model_validate(plan_dict)
+        plan.groq_model_used = model_used
+        plan.analysis_latency_ms = latency_ms
+        return self._apply_safety_overrides(plan, ctx)
+
+    @staticmethod
+    def _extract_json_object(raw: str) -> str:
+        """
+        Isolates the JSON object from a raw completion. Groq's JSON mode always
+        returns pure JSON, but a reasoning-capable NVIDIA fallback model may
+        prepend chain-of-thought text (or wrap the object in a markdown code
+        fence) before the actual object — take the substring from the first
+        '{' to the matching last '}' rather than assuming the whole string
+        is valid JSON.
+        """
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            return raw
+        return raw[start : end + 1]
 
     def _apply_safety_overrides(self, plan: ExecutionPlan, ctx: PipelineContext) -> ExecutionPlan:
         """

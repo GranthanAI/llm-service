@@ -25,18 +25,18 @@ help:
 	@echo "  docker-down       - Stop llm-service via docker compose"
 	@echo "  clean             - Clean python cache files and temp artifacts"
 
-# Start existing docker containers for local GraphGPT stack
+# Shared infrastructure lives in the root-level ../docker-compose.yml
 infra-up:
-	-docker start graphgpt-kafka graphgpt-redis graphgpt-neo4j graphgpt-cassandra milvus-minio milvus-etcd milvus-standalone
+	docker compose -f ../docker-compose.yml up -d
 
 infra-down:
-	-docker stop graphgpt-kafka graphgpt-redis graphgpt-neo4j graphgpt-cassandra milvus-standalone milvus-etcd milvus-minio
+	docker compose -f ../docker-compose.yml down
 
 infra-status:
-	docker ps -a --filter "name=graphgpt" --filter "name=milvus"
+	docker compose -f ../docker-compose.yml ps
 
 infra-logs-kafka:
-	docker logs -f graphgpt-kafka
+	docker compose -f ../docker-compose.yml logs -f kafka
 
 install:
 	uv pip install -e ".[dev]"

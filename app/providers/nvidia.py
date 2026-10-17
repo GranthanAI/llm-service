@@ -32,7 +32,7 @@ class NVIDIAAdapter(BaseProviderAdapter):
     def __init__(
         self,
         api_key: str,
-        model: str = "meta/llama-3.3-70b-instruct",
+        model: str = "nvidia/nemotron-3.5-lightning-30b-a3b",
         base_url: str = "https://integrate.api.nvidia.com/v1",
         timeout_s: float = 30.0,
         temperature: float = 0.2,
