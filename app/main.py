@@ -1,3 +1,4 @@
+from groq import AsyncGroq
 """
 Main FastAPI Application Bootstrap.
 Implements LLD v2.0 Section 3.1 and Section 29.1.
@@ -41,6 +42,7 @@ from app.providers import (
     GroqAdapter,
     NVIDIAAdapter,
 )
+from app.providers.chain import ChainEntry, ProviderChain
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
@@ -158,10 +160,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         top_p=config.nvidia_top_p,
         max_tokens=config.nvidia_max_tokens,
     )
-    groq_client = GroqAnalysisClient(
-        api_key=config.groq_api_key.get_secret_value() if config.groq_api_key else "",
-        model=config.groq_model,
-        timeout_ms=config.groq_timeout_ms,
+    groq_key = config.groq_api_key.get_secret_value() if config.groq_api_key else ""
+
+    def _analysis_client(model: str) -> GroqAnalysisClient:
+        # max_retries=0: a rate-limited Groq model must fail fast so the next one is tried, not back off silently.
+        return GroqAnalysisClient(
+            api_key=groq_key,
+            model=model,
+            timeout_ms=config.groq_timeout_ms,
+            client=AsyncGroq(api_key=groq_key or "not-set", max_retries=0),
+        )
+
+    groq_client = _analysis_client(config.groq_model)
+    # Request planning falls back through the same Groq models as answer generation, in the same order.
+    analysis_fallbacks = (
+        [_analysis_client(m) for m in dict.fromkeys(config.groq_order_models) if m != config.groq_model]
+        if groq_key
+        else []
     )
     container.request_analyzer = RequestAnalyzer(
         groq_client=groq_client,
@@ -175,6 +190,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ),
         config=config,
         nvidia_adapter=nvidia_adapter,
+        fallback_clients=analysis_fallbacks,
     )
 
     # 8. Initialize Prompt Engine (Phase 13) & Context Window Manager (Phase 14)
@@ -279,6 +295,47 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         idle_timeout_s=config.generation_idle_timeout_ms / 1000.0 or None,
         fallback_first_token_timeout_s=config.generation_fallback_first_token_timeout_ms / 1000.0 or None,
     )
+    # Ordered provider chain (GENERATION_PROVIDER_ORDER): first to produce a token wins, the rest are fallbacks.
+    chain_entries: list[ChainEntry] = []
+    for spec in config.generation_order_list:
+        if spec.startswith("groq:") and groq_key:
+            model_id = spec.split(":", 1)[1]
+            chain_entries.append(
+                ChainEntry(
+                    name=spec,
+                    adapter=GroqAdapter(
+                        api_key=groq_key,
+                        model=model_id,
+                        timeout_s=20.0,
+                        tpm_limit=config.groq_tpm_limit,
+                    ),
+                    breaker=cb_registry.get_or_create(spec),
+                    first_token_timeout_s=config.groq_first_token_timeout_ms / 1000.0 or None,
+                )
+            )
+        elif spec == "nvidia" and config.enable_nvidia and config.nvidia_api_key.get_secret_value():
+            chain_entries.append(
+                ChainEntry(
+                    name="nvidia",
+                    adapter=nvidia_adapter,
+                    breaker=cb_nvidia,
+                    first_token_timeout_s=config.generation_first_token_timeout_ms / 1000.0 or None,
+                )
+            )
+        elif spec == "gemini" and config.gemini_api_key.get_secret_value():
+            chain_entries.append(
+                ChainEntry(
+                    name="gemini",
+                    adapter=gemini_adapter,
+                    breaker=cb_gemini,
+                    first_token_timeout_s=config.generation_fallback_first_token_timeout_ms / 1000.0 or None,
+                )
+            )
+    if chain_entries:
+        generation_router = ProviderChain(
+            chain_entries, idle_timeout_s=config.generation_idle_timeout_ms / 1000.0 or None
+        )
+        log.info("Generation chain configured", order=[e.name for e in chain_entries])
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter
     container.groq_adapter = groq_adapter

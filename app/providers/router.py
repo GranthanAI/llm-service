@@ -26,6 +26,39 @@ from app.utils.tracing import get_tracer
 logger = get_logger("generation_router")
 
 
+async def with_deadlines(
+    source: AsyncIterator[str],
+    first_timeout_s: float | None,
+    idle_timeout_s: float | None,
+    label: str,
+) -> AsyncIterator[str]:
+    """Yield tokens from `source`, enforcing a first-token and an inter-token deadline."""
+    it = source.__aiter__()
+    first = True
+    try:
+        while True:
+            limit = first_timeout_s if first else idle_timeout_s
+            try:
+                token = await asyncio.wait_for(it.__anext__(), timeout=limit)
+            except StopAsyncIteration:
+                return
+            except asyncio.TimeoutError as exc:
+                stage = "first token" if first else "next token"
+                raise ProviderTimeoutError(
+                    f"{label} provider produced no {stage} within {limit:g}s",
+                    provider=label,
+                ) from exc
+            first = False
+            yield token
+    finally:
+        aclose = getattr(it, "aclose", None)
+        if aclose is not None:
+            try:
+                await aclose()
+            except Exception:
+                pass
+
+
 class GenerationRouter:
     """
     Routes generation requests to primary provider (NVIDIA NIM), falling back
@@ -133,38 +166,8 @@ class GenerationRouter:
             async for token in self._stream_fallback(prompt, params, gemini_cb):
                 yield token
 
-    async def _with_deadlines(
-        self,
-        source: AsyncIterator[str],
-        first_timeout_s: float | None,
-        idle_timeout_s: float | None,
-        label: str,
-    ) -> AsyncIterator[str]:
-        """Yield tokens from `source`, enforcing a first-token and an inter-token deadline."""
-        it = source.__aiter__()
-        first = True
-        try:
-            while True:
-                limit = first_timeout_s if first else idle_timeout_s
-                try:
-                    token = await asyncio.wait_for(it.__anext__(), timeout=limit)
-                except StopAsyncIteration:
-                    return
-                except asyncio.TimeoutError as exc:
-                    stage = "first token" if first else "next token"
-                    raise ProviderTimeoutError(
-                        f"{label} provider produced no {stage} within {limit:g}s",
-                        provider=label,
-                    ) from exc
-                first = False
-                yield token
-        finally:
-            aclose = getattr(it, "aclose", None)
-            if aclose is not None:
-                try:
-                    await aclose()
-                except Exception:
-                    pass
+    def _with_deadlines(self, source, first_timeout_s, idle_timeout_s, label):
+        return with_deadlines(source, first_timeout_s, idle_timeout_s, label)
 
     async def _stream_fallback(
         self,
