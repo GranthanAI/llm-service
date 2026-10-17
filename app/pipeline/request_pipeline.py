@@ -81,7 +81,11 @@ class RequestPipeline:
         self.tool_registry = tool_registry
         self.tool_dispatcher = tool_dispatcher
         # Default: rewrite follow-up search queries with the analyzer's Groq client when one exists.
-        self.query_rewriter = query_rewriter or SearchQueryRewriter(getattr(request_analyzer, "groq_client", None))
+        self.query_rewriter = query_rewriter or SearchQueryRewriter(
+            getattr(request_analyzer, "groq_client", None),
+            fallback_clients=getattr(request_analyzer, "fallback_clients", None),
+            fallback_adapters=getattr(request_analyzer, "fallback_adapters", None),
+        )
 
     async def run(self, event: ChatMessageCreatedEvent) -> None:
         """
@@ -225,7 +229,11 @@ class RequestPipeline:
                 target_model = self.config.groq_model
                 max_tokens = self.config.groq_max_tokens
                 provider_name = "groq"
-            trimmed = self.context_window_manager.manage(composed, target_model=target_model)
+            trimmed = self.context_window_manager.manage(
+                composed,
+                target_model=target_model,
+                custom_input_budget=self.config.prompt_token_budget or None,
+            )
             t = _lap("prompt_ms", t)
 
             # 7. Generation (streaming) with provider fallback
@@ -341,7 +349,9 @@ class RequestPipeline:
             if first:
                 first = False
                 route = params.get("_route") or {}
+                # The provider that actually produced the first token (the chain reports it on every turn).
+                if route.get("provider") and route["provider"] != "primary":
+                    ctx.selected_provider = route["provider"]
                 if route.get("fallback_used"):
                     ctx.generation_fallback_used = True
-                    ctx.selected_provider = route.get("provider") or ctx.selected_provider
             yield token
