@@ -382,10 +382,10 @@ def test_fallback_provider_setting_defaults_to_gemini_and_reads_the_environment(
     from app.config.settings import LLMServiceConfig
 
     monkeypatch.delenv("GENERATION_FALLBACK_PROVIDER", raising=False)
-    assert LLMServiceConfig().generation_fallback_provider == "gemini"
+    assert LLMServiceConfig(_env_file=None).generation_fallback_provider == "gemini"
     for value in ("groq", "none", "gemini"):
         monkeypatch.setenv("GENERATION_FALLBACK_PROVIDER", value)
-        assert LLMServiceConfig().generation_fallback_provider == value
+        assert LLMServiceConfig(_env_file=None).generation_fallback_provider == value
     monkeypatch.setenv("GENERATION_FALLBACK_PROVIDER", "openai")
     with pytest.raises(ValidationError):
-        LLMServiceConfig()
+        LLMServiceConfig(_env_file=None)

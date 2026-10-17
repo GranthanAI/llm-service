@@ -104,6 +104,35 @@ class LLMServiceConfig(BaseSettings):
         validation_alias=AliasChoices("GENERATION_FALLBACK_PROVIDER", "generation_fallback_provider"),
     )
 
+    # Generation latency guards. NVIDIA's httpx timeout is a per-read timeout, so a model
+    # that trickles reasoning tokens never trips it (observed: 60-180 s for "hi"). These are
+    # deadlines on the *visible* token stream: if the primary produces no content token within
+    # `generation_first_token_timeout_ms`, the turn is handed to the fallback provider (only
+    # while nothing has been emitted, so text is never duplicated). `idle` bounds the gap
+    # between tokens once streaming has started.
+    generation_first_token_timeout_ms: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("GENERATION_FIRST_TOKEN_TIMEOUT_MS", "generation_first_token_timeout_ms"),
+    )
+    generation_idle_timeout_ms: int = Field(
+        default=20000,
+        validation_alias=AliasChoices("GENERATION_IDLE_TIMEOUT_MS", "generation_idle_timeout_ms"),
+    )
+    generation_fallback_first_token_timeout_ms: int = Field(
+        default=30000,
+        validation_alias=AliasChoices(
+            "GENERATION_FALLBACK_FIRST_TOKEN_TIMEOUT_MS", "generation_fallback_first_token_timeout_ms"
+        ),
+    )
+
+    # Deterministic fast path for obvious greetings / small talk (skips Memory+Graph
+    # collection and the Groq analysis call; generation is unchanged). See
+    # app/request_analyzer/fast_path.py for the conservative matching rules.
+    enable_fast_path: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ENABLE_FAST_PATH", "enable_fast_path"),
+    )
+
     # Feature Flags (LLD Section 25.3)
     feature_smart_mode: bool = Field(
         default=True,
