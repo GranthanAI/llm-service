@@ -192,6 +192,7 @@ class ErrorHandler:
             conversation_id=ctx.conversation_id,
             user_id=ctx.user_id,
             request_message_id=ctx.message_id,
+            response_message_id=ctx.response_message_id,
             mode=mode_str,
             skill=skill_str,
             engine_type=ctx.engine_type or "mode_handler",

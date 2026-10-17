@@ -257,10 +257,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         primary_adapter, primary_cb = groq_adapter, cb_groq
 
+    # GENERATION_FALLBACK_PROVIDER picks who answers when the primary fails.
+    fallback_name = config.generation_fallback_provider
+    if fallback_name == "groq":
+        fallback_adapter, fallback_cb = groq_adapter, cb_groq
+    else:
+        fallback_adapter, fallback_cb = gemini_adapter, cb_gemini
+    # A fallback identical to the primary (ENABLE_NVIDIA=false + groq) would just retry the
+    # same provider, so treat it as no fallback.
+    fallback_enabled = fallback_name != "none" and fallback_adapter is not primary_adapter
+    log.info("Generation providers configured", primary="nvidia" if config.enable_nvidia else "groq",
+                fallback=fallback_name if fallback_enabled else "none")
     generation_router = GenerationRouter(
         nvidia_adapter=primary_adapter,
-        gemini_adapter=gemini_adapter,
-        circuit_breakers={"nvidia": primary_cb, "gemini": cb_gemini},
+        gemini_adapter=fallback_adapter,
+        circuit_breakers={"nvidia": primary_cb, fallback_name: fallback_cb},
+        fallback_enabled=fallback_enabled,
+        fallback_name=fallback_name if fallback_name != "none" else "gemini",
     )
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter

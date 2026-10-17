@@ -23,8 +23,16 @@ class ChatMessageCreatedEvent(BaseModel):
     """
 
     event_type: str = "chat.message.created"
-    schema_version: str = "2.0"
+    schema_version: str = "2.1"
+    # Request/correlation identity. For a normal send this is the user's message
+    # id; for a regeneration it is a fresh request id. It is NOT the id of the
+    # assistant message that will hold the reply.
     message_id: str
+    # Identity of the pending assistant message this request will fill, allocated
+    # by Conversation Service before dispatch. Must be echoed unchanged on every
+    # response event. Optional only so that a legacy event deserialises; such an
+    # event is rejected to the DLQ (never answered under a guessed id).
+    response_message_id: str | None = None
     conversation_id: str
     user_id: str
     content: str

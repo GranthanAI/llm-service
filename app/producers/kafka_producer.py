@@ -190,6 +190,7 @@ class KafkaPublisher:
             conversation_id=ctx.conversation_id,
             user_id=ctx.user_id,
             request_message_id=ctx.message_id,
+            response_message_id=ctx.response_message_id,
             full_content=full_response,
             provider=ctx.selected_provider or "nvidia",
             generation_fallback_used=ctx.generation_fallback_used,
@@ -287,6 +288,7 @@ class KafkaPublisher:
             conversation_id=ctx.conversation_id,
             user_id=ctx.user_id,
             message_id=ctx.message_id,
+            response_message_id=ctx.response_message_id,
             reason=reason,
             timestamp=datetime.now(UTC),
         )

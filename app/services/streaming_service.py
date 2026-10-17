@@ -269,6 +269,7 @@ class StreamingEngine:
             conversation_id=ctx.conversation_id,
             user_id=ctx.user_id,
             message_id=ctx.message_id,
+            response_message_id=ctx.response_message_id,
             chunk_index=chunk_index,
             sequence_number=sequence_number,
             content=content,

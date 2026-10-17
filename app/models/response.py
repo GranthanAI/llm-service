@@ -54,10 +54,11 @@ class ChatResponseChunkEvent(BaseModel):
     """
 
     event_type: str = "chat.response.chunk"
-    schema_version: str = "2.0"
+    schema_version: str = "2.1"
     conversation_id: str
     user_id: str
-    message_id: str
+    message_id: str  # request/correlation id (unchanged meaning)
+    response_message_id: str | None = None  # assistant message this chunk belongs to
     chunk_index: int
     sequence_number: int
     content: str
@@ -72,11 +73,12 @@ class ChatResponseGeneratedEvent(BaseModel):
     """
 
     event_type: str = "chat.response.generated"
-    schema_version: str = "2.0"
+    schema_version: str = "2.1"
     response_id: str
     conversation_id: str
     user_id: str
     request_message_id: str
+    response_message_id: str | None = None  # assistant message to finalize / fail
     full_content: str | None = None
     provider: str | None = "nvidia"
     generation_fallback_used: bool = False
@@ -123,6 +125,7 @@ class ChatResponseCancelledEvent(BaseModel):
     conversation_id: str
     user_id: str
     message_id: str
+    response_message_id: str | None = None
     reason: str = "client_disconnected"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -137,7 +140,7 @@ class ChatMessageDLQEvent(BaseModel):
     original_offset: int = 0
     original_key: str | None = None
     original_value: str | None = None
-    error_type: str  # "DeserializationError" | "PipelineError"
+    error_type: str  # "DeserializationError" | "PipelineError" | "ContractViolation"
     error_message: str
     failed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     retry_count: int = 0

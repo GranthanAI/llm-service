@@ -54,6 +54,7 @@ def _make_valid_event_payload(
         "conversation_id": conversation_id,
         "user_id": "user_kafka_001",
         "message_id": "msg_kafka_001",
+        "response_message_id": "resp_msg_kafka_001",
         "content": content,
         "mode_hint": None,
         "file_ids": [],

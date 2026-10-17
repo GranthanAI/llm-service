@@ -278,3 +278,114 @@ async def test_generation_router_all_providers_failed():
     with pytest.raises(AllProvidersFailedError):
         async for _ in router.generate_stream(prompt):
             pass
+
+
+def _prompt() -> TrimmedPrompt:
+    return TrimmedPrompt(sections=[], messages=[{"role": "user", "content": "Hello"}], total_tokens=5, mode="default")
+
+
+@pytest.mark.asyncio
+async def test_disabled_fallback_never_contacts_gemini_on_stream_failure():
+    """ENABLE_GEMINI_FALLBACK=false: a primary failure fails fast and Gemini is never called."""
+    primary = MockStreamAdapter(provider_name="nvidia", tokens=[], should_fail=True)
+    fallback = MockStreamAdapter(provider_name="gemini", tokens=["must", "not", "run"])
+    router = GenerationRouter(
+        nvidia_adapter=primary,
+        gemini_adapter=fallback,
+        circuit_breakers={"nvidia": CircuitBreaker("nvidia", CircuitBreakerConfig(failure_threshold=5)),
+                          "gemini": CircuitBreaker("gemini", CircuitBreakerConfig(failure_threshold=5))},
+        fallback_enabled=False,
+    )
+    with pytest.raises(AllProvidersFailedError, match="fallback is disabled"):
+        async for _ in router.generate_stream(_prompt()):
+            pass
+    assert primary.call_count == 1
+    assert fallback.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_disabled_fallback_also_applies_when_the_primary_breaker_is_open():
+    primary = MockStreamAdapter(provider_name="nvidia", tokens=["x"])
+    fallback = MockStreamAdapter(provider_name="gemini", tokens=["must", "not", "run"])
+    cb_nvidia = CircuitBreaker("nvidia", CircuitBreakerConfig(failure_threshold=1))
+    await cb_nvidia.on_failure()  # opens the breaker
+    router = GenerationRouter(
+        nvidia_adapter=primary,
+        gemini_adapter=fallback,
+        circuit_breakers={"nvidia": cb_nvidia, "gemini": CircuitBreaker("gemini", CircuitBreakerConfig())},
+        fallback_enabled=False,
+    )
+    with pytest.raises(AllProvidersFailedError):
+        async for _ in router.generate_stream(_prompt()):
+            pass
+    assert primary.call_count == 0 and fallback.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_disabled_fallback_does_not_affect_a_healthy_primary():
+    primary = MockStreamAdapter(provider_name="nvidia", tokens=["All", " good"])
+    fallback = MockStreamAdapter(provider_name="gemini", tokens=["no"])
+    router = GenerationRouter(
+        nvidia_adapter=primary,
+        gemini_adapter=fallback,
+        circuit_breakers={"nvidia": CircuitBreaker("nvidia", CircuitBreakerConfig()),
+                          "gemini": CircuitBreaker("gemini", CircuitBreakerConfig())},
+        fallback_enabled=False,
+    )
+    assert "".join([t async for t in router.generate_stream(_prompt())]) == "All good"
+    assert fallback.call_count == 0
+
+
+def _router(primary, fallback, *, name, enabled=True):
+    return GenerationRouter(
+        nvidia_adapter=primary,
+        gemini_adapter=fallback,
+        circuit_breakers={"nvidia": CircuitBreaker("nvidia", CircuitBreakerConfig(failure_threshold=5)),
+                          name: CircuitBreaker(name, CircuitBreakerConfig(failure_threshold=5))},
+        fallback_enabled=enabled,
+        fallback_name=name,
+    )
+
+
+@pytest.mark.asyncio
+async def test_groq_fallback_answers_only_when_nvidia_fails():
+    nvidia = MockStreamAdapter(provider_name="nvidia", tokens=[], should_fail=True)
+    groq = MockStreamAdapter(provider_name="groq", tokens=["Groq", " answer"])
+    router = _router(nvidia, groq, name="groq")
+    assert "".join([t async for t in router.generate_stream(_prompt())]) == "Groq answer"
+    assert (nvidia.call_count, groq.call_count) == (1, 1)
+
+
+@pytest.mark.asyncio
+async def test_groq_fallback_is_not_used_when_nvidia_succeeds():
+    nvidia = MockStreamAdapter(provider_name="nvidia", tokens=["NVIDIA", " answer"])
+    groq = MockStreamAdapter(provider_name="groq", tokens=["unused"])
+    router = _router(nvidia, groq, name="groq")
+    assert "".join([t async for t in router.generate_stream(_prompt())]) == "NVIDIA answer"
+    assert (nvidia.call_count, groq.call_count) == (1, 0)
+
+
+@pytest.mark.asyncio
+async def test_when_both_nvidia_and_groq_fail_the_error_names_groq_not_gemini():
+    nvidia = MockStreamAdapter(provider_name="nvidia", tokens=[], should_fail=True)
+    groq = MockStreamAdapter(provider_name="groq", tokens=[], should_fail=True)
+    router = _router(nvidia, groq, name="groq")
+    with pytest.raises(AllProvidersFailedError) as exc:
+        async for _ in router.generate_stream(_prompt()):
+            pass
+    assert "Groq error" in str(exc.value) and "Gemini" not in str(exc.value)
+
+
+def test_fallback_provider_setting_defaults_to_gemini_and_reads_the_environment(monkeypatch):
+    from pydantic import ValidationError
+
+    from app.config.settings import LLMServiceConfig
+
+    monkeypatch.delenv("GENERATION_FALLBACK_PROVIDER", raising=False)
+    assert LLMServiceConfig().generation_fallback_provider == "gemini"
+    for value in ("groq", "none", "gemini"):
+        monkeypatch.setenv("GENERATION_FALLBACK_PROVIDER", value)
+        assert LLMServiceConfig().generation_fallback_provider == value
+    monkeypatch.setenv("GENERATION_FALLBACK_PROVIDER", "openai")
+    with pytest.raises(ValidationError):
+        LLMServiceConfig()

@@ -187,6 +187,7 @@ async def test_consumer_idempotency_duplicate_handling(mock_config: LLMServiceCo
         "event_type": "chat.message.created",
         "schema_version": "2.0",
         "message_id": "duplicate_msg_1",
+        "response_message_id": "resp_duplicate_msg_1",
         "conversation_id": "conv_1",
         "user_id": "user_1",
         "content": "Test content",
@@ -273,3 +274,46 @@ async def test_chat_consumer_event_handler():
     )
     await consumer.handle(event)
     mock_pipeline.run.assert_called_once_with(event)
+
+
+@pytest.mark.asyncio
+async def test_consumer_rejects_event_without_response_message_id_to_dlq(mock_config: LLMServiceConfig):
+    """A legacy chat.message.created (no response_message_id) must never be answered:
+    answering under the user's message id would overwrite the user's row. It goes to
+    the DLQ as a ContractViolation, the handler is not called and the offset is committed."""
+    mock_aioconsumer = AsyncMock()
+    mock_publisher = AsyncMock()
+    handler_mock = AsyncMock()
+
+    consumer_engine = KafkaConsumerEngine(
+        config=mock_config,
+        publisher=mock_publisher,
+        event_handler=handler_mock,
+        consumer=mock_aioconsumer,
+    )
+    consumer_engine._running = True
+
+    legacy_payload = {
+        "event_type": "chat.message.created",
+        "schema_version": "2.0",
+        "message_id": "legacy_msg_1",
+        "conversation_id": "conv_1",
+        "user_id": "user_1",
+        "content": "Test content",
+    }
+    raw_bytes = json.dumps(legacy_payload).encode("utf-8")
+    record = ConsumerRecord(
+        topic="chat.message.created", partition=0, offset=42, timestamp=0, timestamp_type=0,
+        key=b"conv_1", value=raw_bytes, checksum=None, serialized_key_size=6,
+        serialized_value_size=len(raw_bytes), headers=[],
+    )
+    tp = TopicPartition("chat.message.created", 0)
+
+    await consumer_engine._process_single_message(record, tp)
+
+    handler_mock.assert_not_called()
+    mock_publisher.publish_dlq.assert_awaited_once()
+    dlq_event = mock_publisher.publish_dlq.call_args.args[0]
+    assert dlq_event.error_type == "ContractViolation"
+    assert dlq_event.original_offset == 42
+    assert mock_aioconsumer.commit.call_count == 1

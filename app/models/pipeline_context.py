@@ -25,6 +25,9 @@ class PipelineContext(BaseModel):
     conversation_id: str
     user_id: str
     message_id: str
+    # Assistant message this turn answers (see ChatMessageCreatedEvent). Echoed
+    # unchanged on every chunk / final / error / cancellation event.
+    response_message_id: str | None = None
     request_id: str
     trace_id: str = ""
     span_id: str = ""
@@ -76,6 +79,7 @@ class PipelineContext(BaseModel):
             conversation_id=event.conversation_id,
             user_id=event.user_id,
             message_id=event.message_id,
+            response_message_id=event.response_message_id,
             request_id=request_id,
             trace_id=trace_id or event.trace_context.traceparent,
             span_id=span_id,

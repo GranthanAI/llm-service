@@ -173,6 +173,32 @@ class KafkaConsumerEngine:
         req_id = generate_request_id()
         correlation_request_id.set(req_id)
 
+        # 2b. Contract check: a response must be addressed to the pending assistant
+        # message Conversation Service allocated. A legacy event without
+        # response_message_id cannot be answered safely (falling back to the user's
+        # message id would overwrite the user's row), so it goes to the DLQ. The
+        # sender's pending-response timeout then fails that turn cleanly.
+        if not event.response_message_id:
+            self.logger.error(
+                "Rejecting chat.message.created without response_message_id (legacy/incomplete event)",
+                message_id=event.message_id,
+                conversation_id=event.conversation_id,
+            )
+            await self.publisher.publish_dlq(
+                ChatMessageDLQEvent(
+                    original_topic=msg.topic,
+                    original_partition=msg.partition,
+                    original_offset=msg.offset,
+                    original_key=key_str,
+                    original_value=raw_val,
+                    error_type="ContractViolation",
+                    error_message="chat.message.created is missing response_message_id (requires schema_version >= 2.1)",
+                    failed_at=datetime.now(UTC),
+                )
+            )
+            await self._commit_offset(tp, msg.offset + 1)
+            return
+
         # 3. Idempotency Check
         if self._processed_ids.contains(event.message_id):
             self.logger.debug(

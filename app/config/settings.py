@@ -96,6 +96,14 @@ class LLMServiceConfig(BaseSettings):
         validation_alias=AliasChoices("ENABLE_NVIDIA", "enable_nvidia"),
     )
 
+    # Which provider answers when the primary generation provider (NVIDIA) fails:
+    #   gemini (default, HLD) | groq | none  (none: fail the turn immediately).
+    # Only that provider is ever contacted as the fallback.
+    generation_fallback_provider: Literal["gemini", "groq", "none"] = Field(
+        default="gemini",
+        validation_alias=AliasChoices("GENERATION_FALLBACK_PROVIDER", "generation_fallback_provider"),
+    )
+
     # Feature Flags (LLD Section 25.3)
     feature_smart_mode: bool = Field(
         default=True,
