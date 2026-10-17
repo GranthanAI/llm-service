@@ -43,7 +43,7 @@ class WebSearchHandler:
             tools.append(
                 ToolCall(
                     tool_name="web_search",
-                    params={"query": ctx.user_message},
+                    params={"query": ctx.search_query or ctx.user_message},
                     parallel=False,
                     required=True,
                 )

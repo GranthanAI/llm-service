@@ -40,10 +40,9 @@ class ContextMerger:
         if retrieval and retrieval.chunks:
             deduped_chunks = self._deduplicate_chunks(retrieval.chunks, graph)
             ranked_chunks = self._rank_chunks(deduped_chunks)
-            sanitized_retrieval = RetrievalContext(
-                chunks=ranked_chunks,
-                total_chunks=len(ranked_chunks),
-                query=retrieval.query,
+            # model_copy keeps the retrieval status/counts the Retrieval Service reported.
+            sanitized_retrieval = retrieval.model_copy(
+                update={"chunks": ranked_chunks, "total_chunks": len(ranked_chunks)}
             )
         elif retrieval:
             sanitized_retrieval = retrieval

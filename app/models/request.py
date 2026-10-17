@@ -16,6 +16,13 @@ class TraceContext(BaseModel):
     tracestate: str = ""
 
 
+class HistoryMessage(BaseModel):
+    """One finished earlier turn, supplied by Conversation Service with the request."""
+
+    role: str
+    content: str
+
+
 class ChatMessageCreatedEvent(BaseModel):
     """
     Kafka event consumed from topic: chat.message.created.
@@ -39,6 +46,8 @@ class ChatMessageCreatedEvent(BaseModel):
     mode_hint: str | None = None
     selected_tools: list[str] = Field(default_factory=list)
     file_ids: list[str] = Field(default_factory=list)
+    # Recent finished turns before this request, oldest first. Optional/additive (older producers omit it).
+    history: list[HistoryMessage] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_context: TraceContext = Field(default_factory=TraceContext)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

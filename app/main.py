@@ -223,6 +223,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         api_key=config.groq_api_key.get_secret_value(),
         model=config.groq_model,
         timeout_s=config.groq_timeout_ms / 1000.0,
+        tpm_limit=config.groq_tpm_limit,
     )
     # 10. Initialize Provider Adapters & Generation Router (Phase 15)
     cb_registry = CircuitBreakerRegistry(
@@ -300,6 +301,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         streaming_engine=streaming_engine,
         publisher=publisher,
         config=config,
+        tool_registry=tool_registry,
+        tool_dispatcher=tool_dispatcher,
     )
     container.request_pipeline = request_pipeline
     chat_consumer = ChatConsumer(pipeline=request_pipeline)
