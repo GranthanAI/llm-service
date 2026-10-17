@@ -58,8 +58,17 @@ def fallback_query(message: str, history: list[Message]) -> str:
 
 
 class SearchQueryRewriter:
-    def __init__(self, groq_client: Any | None, timeout_s: float = 3.0, logger: structlog.stdlib.BoundLogger | None = None):
+    def __init__(
+        self,
+        groq_client: Any | None,
+        timeout_s: float = 3.0,
+        logger: structlog.stdlib.BoundLogger | None = None,
+        fallback_clients: list[Any] | None = None,
+        fallback_adapters: list[Any] | None = None,
+    ):
         self.groq_client = groq_client
+        self.fallback_clients = list(fallback_clients or [])
+        self.fallback_adapters = list(fallback_adapters or [])
         self.timeout_s = timeout_s
         self.logger = logger or get_logger("search_query_rewriter")
 
@@ -70,20 +79,39 @@ class SearchQueryRewriter:
         if not turns or not needs_context(message):
             return message
 
-        if self.groq_client is not None:
+        clients = [c for c in [self.groq_client, *self.fallback_clients] if c is not None]
+        if clients:
             convo = "\n".join(f"{m.role.value}: {m.content.strip()[:_MAX_TURN_CHARS]}" for m in turns[-_MAX_HISTORY_TURNS:])
             prompt = [
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": f"Conversation:\n{convo}\n\nLast user message: {message}"},
             ]
-            try:
-                raw = await asyncio.wait_for(self.groq_client.complete(messages=prompt), timeout=self.timeout_s)
-                query = _clean(json.loads(raw).get("query", ""))
-                if query:
-                    self.logger.info("search_query_rewritten", method="model", changed=query != message)
-                    return query
-            except Exception as exc:  # timeout, rate limit, bad JSON: degrade to the heuristic
-                self.logger.warning("search_query_rewrite_failed", error=type(exc).__name__)
+            for client in clients:
+                try:
+                    raw = await asyncio.wait_for(client.complete(messages=prompt), timeout=self.timeout_s)
+                    query = _clean(json.loads(raw).get("query", ""))
+                    if query:
+                        self.logger.info("search_query_rewritten", method="model", model=getattr(client, "model", "?"), changed=query != message)
+                        return query
+                except Exception as exc:  # timeout, rate limit, bad JSON: try the next model, then the heuristic
+                    self.logger.warning("search_query_rewrite_failed", model=getattr(client, "model", "?"), error=type(exc).__name__)
+
+        if self.fallback_adapters and turns:
+            convo = "\n".join(f"{m.role.value}: {m.content.strip()[:_MAX_TURN_CHARS]}" for m in turns[-_MAX_HISTORY_TURNS:])
+            prompt = [
+                {"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": f"Conversation:\n{convo}\n\nLast user message: {message}"},
+            ]
+            for adapter in self.fallback_adapters:
+                try:
+                    resp = await asyncio.wait_for(adapter.execute(prompt), timeout=self.timeout_s * 2)
+                    raw = resp.content
+                    query = _clean(json.loads(raw[raw.find("{") : raw.rfind("}") + 1]).get("query", ""))
+                    if query:
+                        self.logger.info("search_query_rewritten", method="model", model=getattr(resp, "model", "?"), changed=query != message)
+                        return query
+                except Exception as exc:
+                    self.logger.warning("search_query_rewrite_failed", provider=getattr(adapter, "provider_name", "?"), error=type(exc).__name__)
 
         query = fallback_query(message, turns)
         self.logger.info("search_query_rewritten", method="heuristic", changed=query != message)
