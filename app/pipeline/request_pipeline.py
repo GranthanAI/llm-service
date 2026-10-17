@@ -228,7 +228,11 @@ class RequestPipeline:
                 target_model = self.config.groq_model
                 max_tokens = self.config.groq_max_tokens
                 provider_name = "groq"
-            trimmed = self.context_window_manager.manage(composed, target_model=target_model)
+            trimmed = self.context_window_manager.manage(
+                composed,
+                target_model=target_model,
+                custom_input_budget=self.config.prompt_token_budget or None,
+            )
             t = _lap("prompt_ms", t)
 
             # 7. Generation (streaming) with provider fallback

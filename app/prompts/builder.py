@@ -152,7 +152,9 @@ class PromptBuilder:
                     PromptSection(
                         name="retrieval",
                         content=retrieval_content,
-                        priority=5,
+                        # Attached documents are the point of the question: when the prompt must be
+                        # trimmed, cut graph/memory/tool results first and keep the document passages.
+                        priority=9 if ctx.file_ids else 5,
                         token_count=_count_tokens(retrieval_content),
                         trimmable=True,
                     )

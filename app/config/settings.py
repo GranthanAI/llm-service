@@ -57,6 +57,10 @@ class LLMServiceConfig(BaseSettings):
     # gpt-oss-20b allows 8000, so a request must fit in it or it is rejected (HTTP 429) before generating a
     # single token. 0 disables the cap (paid tiers).
     groq_tpm_limit: int = 8000
+    # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
+    # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input
+    # tokens/min on qwen): the prompt AND the answer must both fit. 0 = no cap (model's full window).
+    prompt_token_budget: int = 5000
     # Order in which answer generation tries providers; the first to produce a token wins and the rest
     # are fallbacks. Entries: `groq:<model>` (same Groq key; each model has its own rate limits), `nvidia`,
     # `gemini`. Providers without credentials are skipped. NVIDIA is last because it can take 1-2 minutes.
