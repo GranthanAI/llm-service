@@ -274,6 +274,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         circuit_breakers={"nvidia": primary_cb, fallback_name: fallback_cb},
         fallback_enabled=fallback_enabled,
         fallback_name=fallback_name if fallback_name != "none" else "gemini",
+        first_token_timeout_s=config.generation_first_token_timeout_ms / 1000.0 or None,
+        idle_timeout_s=config.generation_idle_timeout_ms / 1000.0 or None,
+        fallback_first_token_timeout_s=config.generation_fallback_first_token_timeout_ms / 1000.0 or None,
     )
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter
