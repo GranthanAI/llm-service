@@ -235,6 +235,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         api_key=config.gemini_api_key.get_secret_value(),
         model=config.gemini_model,
     )
+    if config.gemini_api_key.get_secret_value():
+        # Gemini also backs up request planning and search-query rewriting (after the Groq models).
+        container.request_analyzer.fallback_adapters = [gemini_adapter]
     groq_adapter = GroqAdapter(
         api_key=config.groq_api_key.get_secret_value(),
         model=config.groq_model,
@@ -328,7 +331,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     name="gemini",
                     adapter=gemini_adapter,
                     breaker=cb_gemini,
-                    first_token_timeout_s=config.generation_fallback_first_token_timeout_ms / 1000.0 or None,
+                    first_token_timeout_s=config.gemini_timeout_ms / 1000.0 or None,
                 )
             )
     if chain_entries:

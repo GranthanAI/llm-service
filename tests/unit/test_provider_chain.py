@@ -63,9 +63,9 @@ async def _collect(chain, params=None):
 # ------------------------------------------------------------------ settings
 
 
-def test_default_order_puts_groq_first_and_nvidia_last():
+def test_default_order_puts_groq_first_gemini_in_the_middle_and_nvidia_last():
     c = LLMServiceConfig(_env_file=None)
-    assert c.generation_order_list == ["groq:openai/gpt-oss-120b", "groq:qwen/qwen3.8-27b", "groq:openai/gpt-oss-20b", "nvidia"]
+    assert c.generation_order_list == ["groq:openai/gpt-oss-120b", "groq:qwen/qwen3.8-27b", "gemini", "groq:openai/gpt-oss-20b", "nvidia"]
     assert c.groq_order_models == ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
 
 
@@ -240,3 +240,76 @@ async def test_pipeline_reports_the_provider_that_actually_answered_even_without
 
     assert [t async for t in RequestPipeline._track_route(src(), params, ctx)] == ["a"]
     assert ctx.selected_provider == "groq:openai/gpt-oss-120b" and ctx.generation_fallback_used is False
+
+
+# ------------------------------------------------------------------ Gemini as a fallback (fakes only: no provider calls)
+
+
+class _GeminiLike:
+    """Stands in for GeminiAdapter: async execute(messages) -> object with .content/.model."""
+
+    provider_name = "gemini"
+
+    def __init__(self, content=None, exc=None):
+        self.content, self.exc, self.calls = content, exc, 0
+
+    async def execute(self, messages, params=None):
+        self.calls += 1
+        if self.exc:
+            raise self.exc
+        return MagicMock(content=self.content, model="gemini-flash-latest")
+
+
+async def test_planning_uses_gemini_after_the_groq_models_and_before_nvidia():
+    primary = _Client("openai/gpt-oss-20b", exc=RuntimeError("daily limit"))
+    groq_fb = [_Client("openai/gpt-oss-120b", exc=RuntimeError("429")), _Client("qwen/qwen3.8-27b", exc=RuntimeError("413"))]
+    gemini = _GeminiLike(content="```json\n" + PLAN + "\n```")  # models often wrap JSON in a fence
+    nvidia = MagicMock()
+    nvidia.execute = AsyncMock()
+    analyzer = _analyzer(primary, groq_fb, nvidia)
+    analyzer.fallback_adapters = [gemini]
+    plan = await analyzer.analyze(_ctx())
+    assert plan.groq_model_used == "gemini-flash-latest" and gemini.calls == 1
+    assert all(c.calls == 1 for c in groq_fb) and nvidia.execute.await_count == 0  # NVIDIA never needed
+
+
+async def test_a_failing_gemini_does_not_block_the_nvidia_last_resort_or_the_safe_default():
+    primary = _Client("p", exc=RuntimeError("x"))
+    gemini = _GeminiLike(exc=RuntimeError("invalid api key"))
+    nvidia = MagicMock()
+    nvidia.execute = AsyncMock(side_effect=asyncio.TimeoutError())
+    analyzer = _analyzer(primary, [], nvidia)
+    analyzer.fallback_adapters = [gemini]
+    plan = await analyzer.analyze(_ctx())
+    assert gemini.calls == 1 and nvidia.execute.await_count == 1
+    assert plan.groq_model_used == "fallback_safe_default"
+
+
+async def test_rewriter_uses_gemini_when_every_groq_model_failed():
+    groq = [_Client("a", exc=RuntimeError("429")), _Client("b", exc=RuntimeError("413"))]
+    gemini = _GeminiLike(content='Here you go: {"query": "duckduckgo-search python library"}')
+    q = await SearchQueryRewriter(groq[0], fallback_clients=groq[1:], fallback_adapters=[gemini]).rewrite("check again and tell", _turns())
+    assert q == "duckduckgo-search python library" and gemini.calls == 1
+
+
+async def test_rewriter_degrades_to_the_heuristic_when_gemini_also_fails():
+    gemini = _GeminiLike(exc=RuntimeError("quota"))
+    q = await SearchQueryRewriter(None, fallback_adapters=[gemini]).rewrite("check again and tell", _turns())
+    assert q == "How to use duckduckgo in my project? check again and tell"
+
+
+def test_the_real_gemini_adapter_exposes_the_interface_the_fallbacks_rely_on():
+    from app.providers.gemini import GeminiAdapter
+
+    assert asyncio.iscoroutinefunction(GeminiAdapter.execute) and asyncio.iscoroutinefunction(GeminiAdapter.stream) is False
+    assert hasattr(GeminiAdapter, "stream") and GeminiAdapter(api_key="k", model="m").provider_name == "gemini"
+
+
+async def test_gemini_sits_between_groq_and_nvidia_in_a_chain_and_is_used_when_groq_is_exhausted():
+    groq_a = _Adapter("groq:120b", error=ProviderRateLimitError("429", provider="groq"))
+    groq_b = _Adapter("groq:qwen", error=RuntimeError("413 too large"))
+    gem = _Adapter("gemini", ["from gemini"])
+    nv = _Adapter("nvidia", ["never"])
+    params: dict = {}
+    assert await _collect(ProviderChain([_entry(groq_a), _entry(groq_b), _entry(gem), _entry(nv)]), params) == ["from gemini"]
+    assert nv.calls == 0 and params["_route"]["provider"] == "gemini" and params["_route"]["fallback_used"] is True

@@ -84,6 +84,7 @@ class RequestPipeline:
         self.query_rewriter = query_rewriter or SearchQueryRewriter(
             getattr(request_analyzer, "groq_client", None),
             fallback_clients=getattr(request_analyzer, "fallback_clients", None),
+            fallback_adapters=getattr(request_analyzer, "fallback_adapters", None),
         )
 
     async def run(self, event: ChatMessageCreatedEvent) -> None:

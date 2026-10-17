@@ -43,6 +43,7 @@ class RequestAnalyzer:
         config: LLMServiceConfig | None = None,
         nvidia_adapter: NVIDIAAdapter | None = None,
         fallback_clients: list[GroqAnalysisClient] | None = None,
+        fallback_adapters: list | None = None,
         logger: structlog.stdlib.BoundLogger | None = None,
     ):
         self.groq_client: GroqAnalysisClient = groq_client
@@ -58,6 +59,9 @@ class RequestAnalyzer:
         self.nvidia_adapter: NVIDIAAdapter | None = nvidia_adapter
         # Other Groq models (same key) tried in order when the primary analysis model fails.
         self.fallback_clients: list[GroqAnalysisClient] = list(fallback_clients or [])
+        # Non-Groq providers (e.g. Gemini) with an async execute(messages) -> response.content; tried after
+        # the Groq models and before the slow NVIDIA last resort.
+        self.fallback_adapters: list = list(fallback_adapters or [])
         self.logger = logger or get_logger("request_analyzer")
 
     @trace_span("request_analyzer_analyze")
@@ -115,6 +119,29 @@ class RequestAnalyzer:
                 self.logger.warning(
                     "Fallback analysis model failed",
                     model=client.model,
+                    error=str(fb_exc)[:200],
+                    conversation_id=ctx.conversation_id,
+                )
+
+        for adapter in self.fallback_adapters:
+            try:
+                response = await asyncio.wait_for(
+                    adapter.execute(messages),
+                    timeout=self.config.analysis_fallback_timeout_ms / 1000.0,
+                )
+                plan = self._finalize_plan(response.content, start_time, ctx, model_used=response.model)
+                self.logger.info(
+                    "Request analysis completed via fallback provider",
+                    provider=getattr(adapter, "provider_name", "?"),
+                    model=response.model,
+                    mode=plan.mode.value,
+                    latency_ms=round(plan.analysis_latency_ms, 2),
+                )
+                return plan
+            except Exception as fb_exc:
+                self.logger.warning(
+                    "Fallback analysis provider failed",
+                    provider=getattr(adapter, "provider_name", "?"),
                     error=str(fb_exc)[:200],
                     conversation_id=ctx.conversation_id,
                 )

@@ -66,7 +66,7 @@ class LLMServiceConfig(BaseSettings):
     # `gemini`. Providers without credentials are skipped. NVIDIA is last because it can take 1-2 minutes.
     # The same Groq models also back up request planning and search-query rewriting. Empty = legacy
     # NVIDIA-primary behaviour (ENABLE_NVIDIA / GENERATION_FALLBACK_PROVIDER).
-    generation_provider_order: str = "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,nvidia"
+    generation_provider_order: str = "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,gemini,groq:openai/gpt-oss-20b,nvidia"
     groq_first_token_timeout_ms: int = 12000
     # Upper bound for the last-resort NVIDIA call during request planning (it can take a minute).
     analysis_fallback_timeout_ms: int = 8000
