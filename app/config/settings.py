@@ -53,6 +53,10 @@ class LLMServiceConfig(BaseSettings):
     groq_timeout_ms: int = 5000
     groq_temperature: float = 0.0
     groq_max_tokens: int = 2048
+    # Groq enforces tokens-per-minute per request as (prompt tokens + max_tokens). The free/on-demand tier of
+    # gpt-oss-20b allows 8000, so a request must fit in it or it is rejected (HTTP 429) before generating a
+    # single token. 0 disables the cap (paid tiers).
+    groq_tpm_limit: int = 8000
 
     nvidia_api_key: SecretStr = Field(
         default=SecretStr(""),
@@ -65,7 +69,7 @@ class LLMServiceConfig(BaseSettings):
     nvidia_timeout_ms: int = 30000
     nvidia_temperature: float = 0.2
     nvidia_top_p: float = 0.7
-    nvidia_max_tokens: int = 4096
+    nvidia_max_tokens: int = 8192
 
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
     gemini_model: str = "gemini-2.5-flash"

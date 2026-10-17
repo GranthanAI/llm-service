@@ -16,7 +16,7 @@ from app.exceptions.provider import (
     ProviderRateLimitError,
     ProviderTimeoutError,
 )
-from app.providers.base import BaseProviderAdapter
+from app.providers.base import TRUNCATION_NOTICE, BaseProviderAdapter
 from app.providers.models import GenerationResponse
 from app.utils.metrics import TOKENS_TOTAL
 from app.utils.tracing import get_tracer
@@ -134,11 +134,17 @@ class NVIDIAAdapter(BaseProviderAdapter):
                     max_tokens=max_tokens,
                     stream=True,
                 )
+                truncated = False
                 async for chunk in stream_resp:
                     if chunk.choices and chunk.choices[0].delta:
                         content_piece = chunk.choices[0].delta.content
                         if content_piece:
                             yield content_piece
+                    if chunk.choices and chunk.choices[0].finish_reason == "length":
+                        truncated = True
+                if truncated:
+                    self.logger.warning("NVIDIA answer hit the output token limit", max_tokens=max_tokens)
+                    yield TRUNCATION_NOTICE
             except Exception as e:
                 self._handle_exception(e)
 

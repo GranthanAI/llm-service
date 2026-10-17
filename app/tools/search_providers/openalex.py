@@ -10,6 +10,12 @@ import httpx
 from app.tools.search_providers.base import BaseSearchProvider
 
 
+def _sanitize(query: str) -> str:
+    """OpenAlex treats `?` and `*` as wildcards and answers HTTP 400 for them in its default (stemmed)
+    search, so a natural-language question ending in "?" would lose this source entirely."""
+    return " ".join(query.replace("?", " ").replace("*", " ").split())
+
+
 class OpenAlexProvider(BaseSearchProvider):
     """OpenAlex scholarly works provider."""
 
@@ -25,7 +31,7 @@ class OpenAlexProvider(BaseSearchProvider):
         try:
             resp = await client.get(
                 "https://api.openalex.org/works",
-                params={"search": query, "per-page": max_results},
+                params={"search": _sanitize(query) or query, "per-page": max_results},
                 headers={"User-Agent": "GraphGPT-LLMService/2.0 (mailto:contact@graphgpt.ai)"},
             )
             if resp.status_code == 200:

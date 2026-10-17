@@ -29,6 +29,10 @@ if TYPE_CHECKING:
     from app.models.pipeline_context import PipelineContext
 
 
+# Retrieval outcomes worth one quick retry (a cold embedding model or a slow dependency).
+_TRANSIENT = {"UNAVAILABLE", "TIMEOUT"}
+
+
 class ContextCollector:
     """
     Parallel Context Collector for baseline providers (Memory, Graph, Retrieval).
@@ -159,12 +163,36 @@ class ContextCollector:
             return None
         start_time = time.perf_counter()
         try:
-            res = await self.retrieval_client.get_relevant_chunks(
-                user_id=ctx.user_id,
+            res = None
+            for attempt in (1, 2):
+                res = await self.retrieval_client.get_relevant_chunks(
+                    user_id=ctx.user_id,
+                    conversation_id=ctx.conversation_id,
+                    query=ctx.user_message,
+                    file_ids=ctx.file_ids,
+                    trace_id=ctx.trace_id,
+                )
+                if res.status not in _TRANSIENT or attempt == 2:
+                    break
+                self.logger.warning(
+                    "Retrieval returned a transient status; retrying once",
+                    status=res.status,
+                    conversation_id=ctx.conversation_id,
+                    request_id=ctx.request_id,
+                )
+                await asyncio.sleep(0.2)
+            self.logger.info(
+                "retrieval_result",
                 conversation_id=ctx.conversation_id,
-                query=ctx.user_message,
-                file_ids=ctx.file_ids,
-                trace_id=ctx.trace_id,
+                request_id=ctx.request_id,
+                response_message_id=ctx.response_message_id,
+                status=res.status,
+                detail=res.status_detail,
+                requested=res.requested_count or len(ctx.file_ids),
+                authorized=res.authorized_count,
+                ready=res.ready_count,
+                chunks=len(res.chunks),
+                sources=sorted({c.file_id for c in res.chunks}),
             )
             return res
         finally:

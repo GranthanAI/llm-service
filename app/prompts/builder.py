@@ -158,6 +158,18 @@ class PromptBuilder:
                     )
                 )
 
+        # 4b. Notice that attached documents were searched but did not (fully) answer
+        if ctx.document_notice:
+            sections.append(
+                PromptSection(
+                    name="document_notice",
+                    content=f"## Attached Document Notice\n{ctx.document_notice}",
+                    priority=9,
+                    token_count=_count_tokens(ctx.document_notice),
+                    trimmable=False,
+                )
+            )
+
         # 5. Tool Results (Priority 6)
         if result.tool_outputs:
             tools_content = self._format_tool_results(result.tool_outputs)

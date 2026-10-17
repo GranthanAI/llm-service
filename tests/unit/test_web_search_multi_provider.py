@@ -5,6 +5,8 @@ Implements Phase 10 deliverables verification.
 
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -223,3 +225,81 @@ async def test_web_search_tool_multi_provider_aggregation_and_partial_failure():
     assert len(results) == 2  # Collected from p1 and p2 despite failing_provider
     assert any(r["title"] == "P1 Doc" for r in results)
     assert any(r["title"] == "P2 Doc" for r in results)
+
+
+def _provider(name, results=None, error=None):
+    p = AsyncMock()
+    p.name = name
+    if error is not None:
+        p.search.side_effect = error
+    else:
+        p.search.return_value = results or []
+    return p
+
+
+@pytest.mark.asyncio
+async def test_search_succeeds_when_every_other_provider_fails_or_returns_nothing():
+    """A '400' provider (returns []), a timeout and an exception must not matter if one source answers."""
+    good = _provider("good", [{"title": "Answer", "url": "https://good.example/a", "snippet": "s", "source": "good"}])
+    tool = WebSearchTool(providers=[_provider("empty_400"), _provider("slow", error=TimeoutError("t")), _provider("boom", error=RuntimeError("x")), good])
+    res = await tool.execute(ToolParams(tool_name="web_search", params={"query": "q one"}))
+    assert res.success is True and [r["title"] for r in res.data["results"]] == ["Answer"]
+
+
+@pytest.mark.asyncio
+async def test_all_providers_down_degrades_to_an_empty_result_not_an_exception_and_is_logged():
+    tool = WebSearchTool(providers=[_provider("a", error=TimeoutError("t")), _provider("b", error=RuntimeError("x"))])
+    tool.logger = MagicMock()
+    res = await tool.execute(ToolParams(tool_name="web_search", params={"query": "q two"}))
+    assert res.success is True and res.data["results"] == []
+    kwargs = tool.logger.warning.call_args.kwargs
+    assert kwargs["failed"] == ["a", "b"] and kwargs["results"] == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_summary_names_failed_and_empty_sources():
+    tool = WebSearchTool(providers=[_provider("ok", [{"title": "T", "url": "https://x.example/1", "snippet": "s", "source": "ok"}]), _provider("quiet"), _provider("down", error=RuntimeError("x"))])
+    tool.logger = MagicMock()
+    await tool.execute(ToolParams(tool_name="web_search", params={"query": "q three"}))
+    kwargs = tool.logger.warning.call_args.kwargs
+    assert kwargs["failed"] == ["down"] and kwargs["empty"] == ["quiet"] and kwargs["per_provider"] == {"ok": 1, "quiet": 0}
+
+
+class _SlowProvider:
+    name = "slow"
+
+    def __init__(self, delay):
+        self.delay, self.cancelled = delay, False
+
+    async def search(self, query, max_results, client):
+        try:
+            await asyncio.sleep(self.delay)
+            return [{"title": "late", "url": "https://slow.example/x", "snippet": "s", "source": "slow"}]
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
+@pytest.mark.asyncio
+async def test_one_slow_provider_cannot_fail_a_search_other_sources_already_answered():
+    """Regression: a single provider exceeding the tool timeout used to fail the WHOLE tool (and, being a
+    required tool in web-search mode, the whole turn) although other sources had answered."""
+    good = _provider("good", [{"title": "Answer", "url": "https://good.example/a", "snippet": "s", "source": "good"}])
+    slow = _SlowProvider(delay=30)
+    tool = WebSearchTool(providers=[good, slow], timeout_ms=1500)  # gather deadline = floor 1.0s
+    tool.logger = MagicMock()
+    start = asyncio.get_event_loop().time()
+    res = await tool.execute(ToolParams(tool_name="web_search", params={"query": "q slow"}))
+    elapsed = asyncio.get_event_loop().time() - start
+    assert res.success is True and [r["title"] for r in res.data["results"]] == ["Answer"]
+    assert elapsed < 5.0  # nowhere near the straggler's 30 s: it was abandoned at the deadline
+    assert slow.cancelled  # the straggler was cancelled, not left running
+    assert tool.logger.warning.call_args.kwargs["failed"] == ["slow"]
+
+
+@pytest.mark.asyncio
+async def test_a_provider_finishing_before_the_deadline_is_included():
+    quick = _SlowProvider(delay=0.05)
+    tool = WebSearchTool(providers=[quick], timeout_ms=3000)
+    res = await tool.execute(ToolParams(tool_name="web_search", params={"query": "q quick"}))
+    assert [r["title"] for r in res.data["results"]] == ["late"]
