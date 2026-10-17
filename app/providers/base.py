@@ -40,3 +40,11 @@ class BaseProviderAdapter(ABC):
         Yields tokens incrementally as an asynchronous stream.
         """
         pass
+
+
+# Appended to a streamed answer that stopped because it hit the output limit, so a cut-off answer is never
+# presented as if it were complete.
+TRUNCATION_NOTICE = (
+    "\n\n---\n*The response was cut off because it reached the length limit. "
+    "Reply \u201ccontinue\u201d to get the rest.*"
+)

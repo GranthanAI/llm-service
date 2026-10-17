@@ -79,10 +79,19 @@ class RetrievalServiceClient(BaseGRPCClient[retrieval_pb2_grpc.RetrievalServiceS
                     )
                 )
 
+            # An older Retrieval Service never sets `status` (reads as OK even when empty).
+            status = retrieval_pb2.RetrievalStatus.Name(resp.status)
+            if status == "OK" and not chunks:
+                status = "NO_MATCH"
             return RetrievalContext(
                 chunks=chunks,
                 total_chunks=len(chunks),
                 query=query,
+                status=status,
+                status_detail=resp.status_detail,
+                requested_count=resp.requested_count,
+                authorized_count=resp.authorized_count,
+                ready_count=resp.ready_count,
             )
         except Exception as exc:
             self.handle_rpc_error(exc, service_name="RetrievalService")

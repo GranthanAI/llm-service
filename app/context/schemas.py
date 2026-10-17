@@ -94,6 +94,13 @@ class RetrievalContext(BaseModel):
     chunks: list[DocumentChunk] = Field(default_factory=list)
     total_chunks: int = 0
     query: str | None = None
+    # Why the chunk list is what it is (RetrievalStatus name from the Retrieval Service):
+    # OK | NO_MATCH | ACCESS_DENIED | NOT_INDEXED | INDEXING | INDEXING_FAILED | UNAVAILABLE | TIMEOUT.
+    status: str = "OK"
+    status_detail: str = ""
+    requested_count: int = 0
+    authorized_count: int = 0
+    ready_count: int = 0
 
 
 class ContextBundle(BaseModel):

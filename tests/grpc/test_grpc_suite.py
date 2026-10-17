@@ -301,11 +301,15 @@ async def test_retrieval_client_success():
     mock_chunk = MagicMock()
     mock_chunk.chunk_id = "chunk_001"
     mock_chunk.source_file_id = "file_001"
+    mock_chunk.source_name = "attention.pdf"
     mock_chunk.content = "Chunk A content about attention mechanisms."
     mock_chunk.relevance_score = 0.92
     mock_chunk.metadata = {}
 
     mock_response.chunks = [mock_chunk]
+    mock_response.status = 0  # RetrievalStatus.OK
+    mock_response.status_detail = ""
+    mock_response.requested_count = mock_response.authorized_count = mock_response.ready_count = 1
     mock_stub.GetRelevantChunks = AsyncMock(return_value=mock_response)
 
     client._initialized = True

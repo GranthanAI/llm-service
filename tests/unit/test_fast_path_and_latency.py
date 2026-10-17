@@ -234,7 +234,12 @@ async def test_substantive_request_keeps_full_pipeline(content):
 
 
 async def test_attached_files_always_use_full_pipeline():
+    from app.context.schemas import ContextBundle, RetrievalContext
+
     pipe, collector, analyzer, _ = _pipeline()
+    collector.collect = AsyncMock(
+        return_value=ContextBundle(retrieval=RetrievalContext(status="OK", requested_count=1, authorized_count=1, ready_count=1))
+    )
     await pipe.run(_event("hi", file_ids=["f1"]))
     collector.collect.assert_awaited_once()
     analyzer.analyze.assert_awaited_once()

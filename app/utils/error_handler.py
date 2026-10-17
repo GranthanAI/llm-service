@@ -15,6 +15,7 @@ from app.exceptions.base import FatalError, PermanentError, RetriableError
 from app.exceptions.grpc import GRPCError
 from app.exceptions.provider import ProviderError
 from app.exceptions.tool import ToolError
+from app.exceptions.user_facing import UserFacingError
 from app.models.response import ChatMessageDLQEvent, ChatResponseGeneratedEvent, ErrorType
 from app.utils.metrics import ERRORS_TOTAL
 
@@ -55,6 +56,16 @@ class ErrorHandler:
         """Classifies any exception into category, retriability, and user-facing message."""
         exc_type = type(exc).__name__
 
+        # 0. Errors written for the user (safe to show verbatim)
+        if isinstance(exc, UserFacingError):
+            return ErrorClassification(
+                error_type=ErrorType(exc.error_type),
+                error_code=exc.error_code,
+                is_retriable=False,
+                is_fatal=False,
+                user_message=exc.user_message,
+            )
+
         # 1. Check specific domain hierarchies
         if isinstance(exc, ToolError):
             return ErrorClassification(
@@ -72,6 +83,15 @@ class ErrorHandler:
                 is_retriable=isinstance(exc, RetriableError),
                 is_fatal=False,
                 user_message="Upstream context service temporarily unavailable.",
+            )
+
+        if isinstance(exc, ProviderError) and "rate limit" in str(exc).lower():
+            return ErrorClassification(
+                error_type=ErrorType.INFERENCE,
+                error_code="RATE_LIMIT_EXCEEDED",
+                is_retriable=True,
+                is_fatal=False,
+                user_message="The AI providers are busy (rate limit reached). Please wait a few seconds and try again.",
             )
 
         if isinstance(exc, ProviderError):

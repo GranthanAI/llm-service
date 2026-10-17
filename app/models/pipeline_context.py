@@ -36,6 +36,14 @@ class PipelineContext(BaseModel):
     user_message: str
     mode_hint: UserMode | None = None
     file_ids: list[str] = Field(default_factory=list)
+    # Tool ids the user explicitly selected (validated against the registry before use).
+    selected_tools: list[str] = Field(default_factory=list)
+    # Set when attached documents were searched but nothing relevant was found / some were skipped.
+    document_notice: str | None = None
+    # Standalone web-search query derived from the message + conversation (None = use the raw message).
+    search_query: str | None = None
+    # Earlier turns from the request event, used when the memory service cannot supply history.
+    event_history: list[tuple[str, str]] = Field(default_factory=list)
 
     # Context Bundle (set by ContextCollector)
     context_bundle: ContextBundle | None = None
@@ -86,5 +94,7 @@ class PipelineContext(BaseModel):
             user_message=event.content,
             mode_hint=mode_hint_val,
             file_ids=event.file_ids,
+            selected_tools=list(event.selected_tools or []),
+            event_history=[(h.role, h.content) for h in event.history],
             started_at=datetime.now(UTC),
         )
