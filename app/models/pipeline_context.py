@@ -45,6 +45,8 @@ class PipelineContext(BaseModel):
     search_query: str | None = None
     # Earlier turns from the request event, used when the memory service cannot supply history.
     event_history: list[tuple[str, str]] = Field(default_factory=list)
+    # Ancestor turns inherited by this branch (oldest first). Always used, ahead of the branch's own turns.
+    inherited_history: list[tuple[str, str]] = Field(default_factory=list)
     # User generation preferences (length, tone, language, instructions, citations).
     preferences: GenerationPreferences = Field(default_factory=GenerationPreferences)
 
@@ -98,7 +100,8 @@ class PipelineContext(BaseModel):
             mode_hint=mode_hint_val,
             file_ids=event.file_ids,
             selected_tools=list(event.selected_tools or []),
-            event_history=[(h.role, h.content) for h in event.history],
+            event_history=[(h.role, h.content) for h in event.history if not h.inherited],
+            inherited_history=[(h.role, h.content) for h in event.history if h.inherited],
             preferences=normalize_preferences(event.preferences),
             started_at=datetime.now(UTC),
         )

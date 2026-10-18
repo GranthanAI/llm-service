@@ -304,9 +304,20 @@ class RequestPipeline:
         asynchronous and was observed degraded), so the model and tools always see the conversation."""
         bundle = ctx.context_bundle
         memory = bundle.memory if bundle else None
-        if (memory and memory.short_term_messages) or not ctx.event_history:
+        inherited = [
+            Message(role=Role(role), content=content)
+            for role, content in ctx.inherited_history
+            if role in ("user", "assistant") and content.strip()
+        ]
+        if inherited and memory and memory.short_term_messages:
+            # A branch: the memory service only knows this conversation's own turns. Ancestor turns
+            # (up to the branch point) come first, then the branch's own.
+            memory.short_term_messages = inherited + list(memory.short_term_messages)
+            self.logger.info("inherited_history_added", conversation_id=ctx.conversation_id, count=len(inherited))
             return
-        messages = [
+        if (memory and memory.short_term_messages) or not (ctx.event_history or inherited):
+            return
+        messages = inherited + [
             Message(role=Role(role), content=content)
             for role, content in ctx.event_history
             if role in ("user", "assistant") and content.strip()

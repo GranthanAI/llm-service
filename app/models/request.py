@@ -21,6 +21,9 @@ class HistoryMessage(BaseModel):
 
     role: str
     content: str
+    # Earlier turns of an ANCESTOR conversation that this branch inherited (up to its branch point).
+    inherited: bool = False
+    source_conversation_id: str | None = None
 
 
 class DefaultsApplied(BaseModel):
