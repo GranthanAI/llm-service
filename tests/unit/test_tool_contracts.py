@@ -143,9 +143,9 @@ def test_every_mode_has_its_own_distinct_prompt_with_the_shared_ground_rules():
         data = yaml.safe_load((root / f"{mode}_v1.yaml").read_text(encoding="utf-8"))
         assert data["mode"] == mode
         prompts[mode] = data["system"]
-        assert "untrusted data" in data["system"] and "Never invent" in data["system"]
+        assert "untrusted data" in data["system"] and "never invent" in data["system"].lower()
     assert len(set(prompts.values())) == len(prompts)
-    assert "Web search mode" in prompts["web_search"] and "never invent or alter a link" in prompts["web_search"]
+    assert "Web search mode" in prompts["web_search"] and "never invent, shorten or alter a link" in prompts["web_search"]
 
 
 def test_short_followups_are_resolved_against_the_history_in_every_mode_prompt():
