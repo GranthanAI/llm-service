@@ -201,7 +201,8 @@ def test_prompt_builder_builds_prioritized_sections_from_mode_handler():
     section_map = {s.name: s for s in composed.sections}
     assert section_map["system"].priority == 10
     assert not section_map["system"].trimmable
-    assert "Alice" in section_map["system"].content
+    assert "{user_name}" not in section_map["system"].content  # no unfilled placeholders
+    assert "Tutor mode" in section_map["system"].content
 
     assert section_map["long_term_memory"].priority == 7
     assert "User is an AI researcher" in section_map["long_term_memory"].content

@@ -247,11 +247,11 @@ async def test_search_succeeds_when_every_other_provider_fails_or_returns_nothin
 
 
 @pytest.mark.asyncio
-async def test_all_providers_down_degrades_to_an_empty_result_not_an_exception_and_is_logged():
+async def test_all_providers_down_is_a_clear_failure_not_an_exception_and_is_logged():
     tool = WebSearchTool(providers=[_provider("a", error=TimeoutError("t")), _provider("b", error=RuntimeError("x"))])
     tool.logger = MagicMock()
     res = await tool.execute(ToolParams(tool_name="web_search", params={"query": "q two"}))
-    assert res.success is True and res.data["results"] == []
+    assert res.success is False and "unavailable" in res.error  # never presented as "no results"
     kwargs = tool.logger.warning.call_args.kwargs
     assert kwargs["failed"] == ["a", "b"] and kwargs["results"] == 0
 

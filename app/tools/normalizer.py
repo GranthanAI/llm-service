@@ -33,6 +33,8 @@ class ToolNormalizer:
                     "title": str(r.get("title", "")),
                     "url": str(r.get("url", "")),
                     "snippet": str(r.get("snippet", r.get("content", ""))),
+                    "source": str(r.get("source", "web")),
+                    **({"published": str(r["published"])} if r.get("published") else {}),
                 }
             )
 
@@ -42,6 +44,7 @@ class ToolNormalizer:
             data={
                 "type": "web_search",
                 "results": normalized_results,
+                "result_count": len(normalized_results),
                 "query": query,
             },
             latency_ms=latency_ms,

@@ -29,7 +29,7 @@ from app.context.schemas import ContextBundle, MemoryContext, Message, Role
 from app.exceptions.user_facing import DocumentContextUnavailableError, InvalidModeError
 from app.models.execution_plan import UserMode
 from app.tools.query_rewrite import SearchQueryRewriter
-from app.tools.selection import build_selected_calls, filter_default_tools
+from app.tools.selection import build_selected_calls, drop_calls_covered_by_mode, filter_default_tools
 from app.workflow_engine.modes import apply_requested_mode, resolve_requested_mode
 from app.security.pii import PIIDetector
 from app.security.sanitizer import InputSanitizer
@@ -175,6 +175,8 @@ class RequestPipeline:
             else:
                 plan = await self.request_analyzer.analyze(ctx)
             plan = apply_requested_mode(plan, requested_mode, self.config)
+            # Web search mode already runs the search: do not run it again for an explicit tool pick.
+            selected_calls = drop_calls_covered_by_mode(selected_calls, plan.mode)
             ctx.plan = plan
             t = _lap("analysis_ms", t)
 

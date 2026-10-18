@@ -15,6 +15,13 @@ class ToolSchema(BaseModel):
     description: str
     version: str = "1.0.0"
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Planner guidance (injected into the analyzer prompt together with the schema).
+    when_to_use: str = ""
+    when_not_to_use: str = ""
+    # Short plain-language text for the UI; falls back to `description` when empty.
+    user_description: str = ""
+    # False = planner/mode-only capability (e.g. covered by a response mode): not offered for manual selection.
+    user_selectable: bool = True
     examples: list[dict[str, Any]] = Field(default_factory=list)
 
 

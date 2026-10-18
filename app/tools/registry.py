@@ -50,6 +50,10 @@ class ToolRegistry:
         """Check if tool is registered and enabled."""
         return name in self._tools and name in self._enabled
 
+    def is_user_selectable(self, name: str) -> bool:
+        """Enabled AND offered to users for manual selection (see ToolSchema.user_selectable)."""
+        return self.is_enabled(name) and self._tools[name].get_schema().user_selectable
+
     def enable(self, name: str) -> None:
         """Enable a registered tool."""
         if name in self._tools:

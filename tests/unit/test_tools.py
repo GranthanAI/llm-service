@@ -206,9 +206,8 @@ async def test_web_search_tool_deduplication_and_caching():
         {"title": "Python", "url": "https://python.org", "snippet": "Python home"},
     ]
     deduped = search_tool._deduplicate_by_domain(raw_results)
-    assert len(deduped) == 2  # Only one fastapi.tiangolo.com entry preserved
-    assert deduped[0]["title"] == "Doc 1"
-    assert deduped[1]["title"] == "Python"
+    assert len(deduped) == 3  # distinct pages are kept; a domain is capped (see test_tool_contracts)
+    assert [d["title"] for d in deduped] == ["Doc 1", "Doc 2", "Python"]
 
     # Execution with caching
     params = ToolParams(tool_name="web_search", params={"query": "FastAPI async"})

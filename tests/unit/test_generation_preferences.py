@@ -103,6 +103,9 @@ class _Registry:
     def is_enabled(self, name):
         return name in self.tools
 
+    def is_user_selectable(self, name):
+        return self.is_enabled(name)
+
     def get(self, name):
         return self.tools[name]
 

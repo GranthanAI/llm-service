@@ -27,7 +27,7 @@ def describe_tool(schema: ToolSchema) -> dict[str, Any]:
     return {
         "id": schema.name,
         "name": schema.name.replace("_", " ").replace("-", " ").title(),
-        "description": schema.description,
+        "description": schema.user_description or schema.description,
         "version": schema.version,
         "parameters": [
             {
@@ -44,7 +44,9 @@ def describe_tool(schema: ToolSchema) -> dict[str, Any]:
 
 
 def list_enabled_tools(registry: ToolRegistry) -> list[dict[str, Any]]:
-    return [describe_tool(s) for s in registry.list_tools()]
+    """Tools a user can pick. Capabilities that a response mode already guarantees (Web search) or that
+    only the planner should use are not listed, so the UI never shows the same capability twice."""
+    return [describe_tool(s) for s in registry.list_tools() if s.user_selectable]
 
 
 def normalize_selection(selected: list[str] | None) -> list[str]:
@@ -68,7 +70,7 @@ def filter_default_tools(selected: list[str] | None, registry: ToolRegistry | No
     kept: list[str] = []
     dropped: list[str] = []
     for name in names:
-        ok = registry.is_enabled(name)
+        ok = registry.is_user_selectable(name)
         if ok:
             tool = registry.get(name)
             ok = tool.is_available()
@@ -80,6 +82,13 @@ def filter_default_tools(selected: list[str] | None, registry: ToolRegistry | No
         else:
             dropped.append(name)
     return kept, dropped
+
+
+def drop_calls_covered_by_mode(calls: list[ToolCall], mode: Any) -> list[ToolCall]:
+    """A mode that always runs a capability (Web search mode runs web_search) must not have it run a
+    second time because the same tool was also selected explicitly."""
+    covered = {"web_search"} if getattr(mode, "value", mode) == "web_search" else set()
+    return [c for c in calls if c.tool_name not in covered]
 
 
 def build_selected_calls(
