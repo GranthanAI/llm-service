@@ -75,11 +75,13 @@ def test_block_is_placed_after_the_base_system_prompt():
     from app.prompts.builder import PromptBuilder
 
     builder = PromptBuilder.__new__(PromptBuilder)
+    builder.registry = MagicMock()
+    builder.registry.get_system_template.side_effect = KeyError("none")   # built-in fallback contract
     ctx = PipelineContext.from_event(_event(preferences={"tone": "simple"}), request_id="r")
     template = SimpleNamespace(system="You are GranthanAI. Follow safety rules.")
     system = PromptBuilder._format_system(builder, MagicMock(), ctx, template)
-    assert system.startswith("You are GranthanAI. Follow safety rules.")
-    assert system.index("Follow safety rules") < system.index("## User preferences")
+    # shared contract -> mode instructions -> user preferences
+    assert system.index("untrusted data") < system.index("Follow safety rules") < system.index("## User preferences")
 
 
 # ---------------------------------------------------------------- tools: defaults lenient, explicit strict

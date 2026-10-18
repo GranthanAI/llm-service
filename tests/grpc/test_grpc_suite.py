@@ -206,7 +206,11 @@ async def test_memory_client_success():
     mock_stub = MagicMock()
     mock_response = MagicMock()
     mock_response.short_term_messages = []
-    mock_response.facts = []
+    mock_response.long_term_facts = []
+    mock_response.medium_summary = ""
+    mock_response.summary_version = 0
+    mock_response.summary_through_message_id = ""
+    mock_response.ancestor_summaries = []
     mock_response.user_profile = None
     mock_response.subgraph_summary = ""
     mock_stub.GetMemoryContext = AsyncMock(return_value=mock_response)

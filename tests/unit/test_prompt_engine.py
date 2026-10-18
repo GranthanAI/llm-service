@@ -75,7 +75,7 @@ def test_prompt_registry_mode_registration_and_lookup():
     assert "GraphGPT" in base_sys.system
 
     safety_sys = registry.get_system_template("safety_guardrail")
-    assert "Safety & Alignment" in safety_sys.system
+    assert "SAFETY" in safety_sys.system
 
     json_sys = registry.get_system_template("json_schema_format")
     assert "Output Format Specification" in json_sys.system

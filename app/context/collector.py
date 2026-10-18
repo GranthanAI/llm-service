@@ -133,6 +133,7 @@ class ContextCollector:
                 conversation_id=ctx.conversation_id,
                 query=ctx.user_message,
                 trace_id=ctx.trace_id,
+                ancestors=ctx.ancestors,
             )
             return res
         finally:

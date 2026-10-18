@@ -40,11 +40,31 @@ class Fact(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class AncestorSummary(BaseModel):
+    """Summary of an ancestor conversation, valid at the child's branch point (never later)."""
+
+    conversation_id: str
+    summary: str
+    covers_through_message_id: str = ""
+    summary_version: int = 0
+
+
 class MemoryContext(BaseModel):
-    """Memory service response bundle."""
+    """Memory service response bundle.
+
+    Layers (kept separate, never merged into one string):
+      short_term_messages  recent turns of THIS conversation
+      summary              compact summary of the older part of THIS conversation
+      ancestor_summaries   branch-valid summaries of ancestor conversations (root first)
+      long_term_facts      durable facts about the USER (not tied to one branch)
+    """
 
     short_term_messages: list[Message] = Field(default_factory=list)
     long_term_facts: list[Fact] = Field(default_factory=list)
+    summary: str = ""
+    summary_version: int = 0
+    summary_through_message_id: str = ""
+    ancestor_summaries: list[AncestorSummary] = Field(default_factory=list)
 
 
 class EntityNode(BaseModel):

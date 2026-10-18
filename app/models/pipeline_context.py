@@ -47,6 +47,8 @@ class PipelineContext(BaseModel):
     event_history: list[tuple[str, str]] = Field(default_factory=list)
     # Ancestor turns inherited by this branch (oldest first). Always used, ahead of the branch's own turns.
     inherited_history: list[tuple[str, str]] = Field(default_factory=list)
+    # Branch lineage with boundaries, root first: [{conversation_id, upto_message_id}].
+    ancestors: list[dict[str, str]] = Field(default_factory=list)
     # User generation preferences (length, tone, language, instructions, citations).
     preferences: GenerationPreferences = Field(default_factory=GenerationPreferences)
 
@@ -102,6 +104,7 @@ class PipelineContext(BaseModel):
             selected_tools=list(event.selected_tools or []),
             event_history=[(h.role, h.content) for h in event.history if not h.inherited],
             inherited_history=[(h.role, h.content) for h in event.history if h.inherited],
+            ancestors=[a.model_dump() for a in event.ancestors],
             preferences=normalize_preferences(event.preferences),
             started_at=datetime.now(UTC),
         )

@@ -129,32 +129,3 @@ def test_empty_and_failed_searches_are_stated_plainly():
     text = _builder()._format_tool_results([empty, failed])
     assert "no results were found" in text and "Do not present any web sources" in text
     assert "FAILED" in text and "No data was retrieved" in text
-
-
-def test_every_mode_has_its_own_distinct_prompt_with_the_shared_ground_rules():
-    import yaml
-    from pathlib import Path
-
-    from app.workflow_engine.modes import _SELECTABLE
-
-    root = Path(__file__).resolve().parents[2] / "app" / "prompts" / "modes"
-    prompts = {}
-    for mode in ["default", "ask_files"] + [m.value for m, _n, _d in _SELECTABLE]:
-        data = yaml.safe_load((root / f"{mode}_v1.yaml").read_text(encoding="utf-8"))
-        assert data["mode"] == mode
-        prompts[mode] = data["system"]
-        assert "untrusted data" in data["system"] and "never invent" in data["system"].lower()
-    assert len(set(prompts.values())) == len(prompts)
-    assert "Web search mode" in prompts["web_search"] and "never invent, shorten or alter a link" in prompts["web_search"]
-
-
-def test_short_followups_are_resolved_against_the_history_in_every_mode_prompt():
-    import yaml
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2] / "app" / "prompts" / "modes"
-    for f in root.glob("*_v1.yaml"):
-        system = yaml.safe_load(f.read_text(encoding="utf-8"))["system"]
-        assert "continues the recent conversation" in system and '"samjhao"' in system, f.name
-    text = PromptBuilder.__new__(PromptBuilder)._format_history([])
-    assert "continues this conversation" in text

@@ -26,6 +26,13 @@ class HistoryMessage(BaseModel):
     source_conversation_id: str | None = None
 
 
+class AncestorRef(BaseModel):
+    """An ancestor conversation of a branch and the last of its messages in scope at the branch point."""
+
+    conversation_id: str
+    upto_message_id: str
+
+
 class DefaultsApplied(BaseModel):
     """Which of mode_hint / selected_tools came from the user's saved defaults (not an
     explicit choice on this message). Saved defaults that are no longer available are
@@ -60,6 +67,8 @@ class ChatMessageCreatedEvent(BaseModel):
     file_ids: list[str] = Field(default_factory=list)
     # Recent finished turns before this request, oldest first. Optional/additive (older producers omit it).
     history: list[HistoryMessage] = Field(default_factory=list)
+    # Branch lineage (root first). Forwarded to the memory service so ancestor summaries are cut at the branch point.
+    ancestors: list[AncestorRef] = Field(default_factory=list)
     # 2.2 (additive): generation preferences resolved by Conversation Service at send
     # time (see app/models/generation_preferences.py) and which choices came from saved defaults.
     preferences: dict[str, Any] = Field(default_factory=dict)

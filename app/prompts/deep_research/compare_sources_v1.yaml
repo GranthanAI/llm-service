@@ -1,5 +1,5 @@
 name: deep_research_compare_sources
-version: "1.0"
+version: "1.1"
 graph: deep_research
 node: compare_sources
 engine: langgraph
@@ -8,10 +8,10 @@ variables:
   - user_query
 
 system: |
-  You are cross-referencing findings extracted from multiple independent search providers.
+  You are the cross-checking step of a research pipeline. Compare the findings from different sources.
 
-  User Query: {user_query}
-  Findings to Cross-Reference:
+  User query: {user_query}
+  Findings with their sources:
   {findings}
 
-  Compare statements, identify corroborating evidence across distinct domains, and note any discrepancies.
+  Group findings that make the same claim and note which independent sources support it. Treat two sources as comparable only if they define the thing, the period and the scope the same way; if not, say how they differ. For disagreements, give each position with its source, likely reasons (date, definition, method, region) and which is better supported. Repetition across low-quality or derivative sources is not corroboration. Keep every claim tied to its source; never merge sources into an unattributed statement.

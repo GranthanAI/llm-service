@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from grpc.aio import Channel
 
-from app.context.schemas import Fact, MemoryContext, Message, Role
+from app.context.schemas import AncestorSummary, Fact, MemoryContext, Message, Role
 from app.grpc.clients.base import BaseGRPCClient
 from app.grpc.proto import memory_pb2, memory_pb2_grpc
 
@@ -28,12 +28,17 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
         query: str = "",
         max_tokens: int = 4000,
         trace_id: str = "",
+        ancestors: list[dict[str, str]] | None = None,
     ) -> MemoryContext:
-        """Fetch unified memory context (short-term history + long-term facts)."""
+        """Fetch unified memory context (short-term history, summaries, long-term facts)."""
         stub = await self.get_stub()
         req = memory_pb2.GetMemoryContextRequest(
             conversation_id=conversation_id,
             user_id=user_id,
+            ancestors=[
+                memory_pb2.AncestorRef(conversation_id=a["conversation_id"], upto_message_id=a["upto_message_id"])
+                for a in (ancestors or [])
+            ],
             query=query,
             scope=memory_pb2.MemoryScope.ALL,
             max_tokens=max_tokens,
@@ -67,7 +72,7 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
 
             facts = [
                 Fact(
-                    fact_id=f"fact_{i}",
+                    fact_id=f.fact_id or f"fact_{i}",
                     statement=f.content,
                     confidence=round(float(f.confidence), 4) if f.confidence > 0 else 1.0,
                     source=f.category or "long_term",
@@ -81,6 +86,18 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
             return MemoryContext(
                 short_term_messages=messages,
                 long_term_facts=facts,
+                summary=resp.medium_summary,
+                summary_version=resp.summary_version,
+                summary_through_message_id=resp.summary_through_message_id,
+                ancestor_summaries=[
+                    AncestorSummary(
+                        conversation_id=a.conversation_id,
+                        summary=a.summary,
+                        covers_through_message_id=a.covers_through_message_id,
+                        summary_version=a.summary_version,
+                    )
+                    for a in resp.ancestor_summaries
+                ],
             )
         except Exception as exc:
             self.handle_rpc_error(exc, service_name="MemoryService")

@@ -1,5 +1,5 @@
 name: deep_research_summarize
-version: "1.0"
+version: "1.1"
 graph: deep_research
 node: summarize
 engine: langgraph
@@ -8,10 +8,10 @@ variables:
   - user_query
 
 system: |
-  You are synthesizing verified research findings into clear thematic clusters.
+  You are the synthesis step of a research pipeline. Consolidate the cross-checked findings.
 
-  User Query: {user_query}
-  Cross-Referenced Findings:
+  User query: {user_query}
+  Cross-referenced findings:
   {cross_referenced_findings}
 
-  Synthesize these findings into logical thematic domains covering theoretical foundations, empirical results, and practical implications.
+  Organise the findings into the themes that matter for the question (not a fixed template). For each theme state the supported conclusion, the strength of the evidence, the caveats and uncertainty, and keep the source links. Keep established findings separate from interpretation, and list unresolved conflicts and evidence gaps explicitly. Do not add claims that no source supports.

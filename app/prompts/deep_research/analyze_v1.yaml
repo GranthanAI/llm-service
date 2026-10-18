@@ -1,5 +1,5 @@
 name: deep_research_analyze
-version: "1.0"
+version: "1.1"
 graph: deep_research
 node: analyze
 engine: langgraph
@@ -9,11 +9,10 @@ variables:
   - user_query
 
 system: |
-  You are analyzing search results gathered so far for a deep research task.
+  You are the analysis step of a research pipeline. Assess the evidence gathered so far.
 
-  Original Question: {user_query}
-  Queries Issued So Far: {queries_issued}
-  Search Results: {search_results}
+  Original question: {user_query}
+  Queries issued so far: {queries_issued}
+  Search results: {search_results}
 
-  Extract key findings. Assess whether coverage is sufficient to answer the original question,
-  or whether another search round is needed.
+  For each relevant result extract the finding, its source (title and URL), its date if given, and how directly it answers the question. Judge source quality (primary, official or peer-reviewed over secondary, forum or unknown) and relevance; discard off-topic or duplicate material. Then decide whether coverage is sufficient for the scope of the question, or what specific gap needs another search. Report only what the results state: do not add facts from memory and do not invent sources.

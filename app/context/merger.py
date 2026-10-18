@@ -62,10 +62,12 @@ class ContextMerger:
             collected_at=datetime.now(UTC),
         )
 
-    def _generate_fingerprint(self, text: str) -> str:
-        """Generate SHA-256 fingerprint for text snippet (first 200 chars normalized)."""
-        normalized = text[:200].lower().strip().encode("utf-8")
-        return hashlib.sha256(normalized).hexdigest()
+    def _generate_fingerprint(self, text: str, scope: str = "") -> str:
+        """SHA-256 over the FULL normalized text (case-folded, whitespace collapsed, trailing punctuation
+        dropped) plus an optional scope (e.g. the source file). Two different long passages that merely share
+        an opening are different evidence and must not collapse; only genuinely identical text does."""
+        normalized = " ".join((text or "").casefold().split()).rstrip(".!?;:,")
+        return hashlib.sha256(f"{scope}\x1f{normalized}".encode()).hexdigest()
 
     def _deduplicate_chunks(
         self,
@@ -86,10 +88,12 @@ class ContextMerger:
 
         unique_chunks: list[DocumentChunk] = []
         for chunk in chunks:
-            fp = self._generate_fingerprint(chunk.content)
-            if fp not in seen_fingerprints:
-                seen_fingerprints.add(fp)
-                unique_chunks.append(chunk)
+            # Identical to a knowledge-graph description (scope-free), or to a chunk of the same file.
+            fp = self._generate_fingerprint(chunk.content, scope=str(chunk.file_id or ""))
+            if self._generate_fingerprint(chunk.content) in seen_fingerprints or fp in seen_fingerprints:
+                continue
+            seen_fingerprints.add(fp)
+            unique_chunks.append(chunk)
 
         return unique_chunks
 
@@ -123,14 +127,17 @@ class ContextMerger:
     def _deduplicate_memory(self, memory: MemoryContext) -> MemoryContext:
         """Deduplicate long-term facts by statement fingerprint."""
         seen_fact_fps: set[str] = set()
+        seen_ids: set[str] = set()
         unique_facts: list[Fact] = []
         for fact in memory.long_term_facts:
             fp = self._generate_fingerprint(fact.statement)
-            if fp not in seen_fact_fps:
-                seen_fact_fps.add(fp)
-                unique_facts.append(fact)
+            stable_id = fact.fact_id if not fact.fact_id.startswith("fact_") else ""
+            if fp in seen_fact_fps or (stable_id and stable_id in seen_ids):
+                continue
+            seen_fact_fps.add(fp)
+            if stable_id:
+                seen_ids.add(stable_id)
+            unique_facts.append(fact)
 
-        return MemoryContext(
-            short_term_messages=memory.short_term_messages,
-            long_term_facts=unique_facts,
-        )
+        # Keep every other layer (summaries, ancestor summaries, ...) exactly as received.
+        return memory.model_copy(update={"long_term_facts": unique_facts})

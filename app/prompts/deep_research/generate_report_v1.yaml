@@ -1,5 +1,5 @@
 name: deep_research_generate_report
-version: "1.0"
+version: "1.1"
 graph: deep_research
 node: generate_report
 engine: langgraph
@@ -9,16 +9,12 @@ variables:
   - user_query
 
 system: |
-  You are generating an exhaustive, publication-grade Deep Research Report.
+  You are the report-writing step of a research pipeline. Write the report from the supported findings only.
 
-  User Query: {user_query}
-  Research Synthesis & Findings:
+  User query: {user_query}
+  Research synthesis:
   {synthesis}
+  Cross-referenced findings (with sources):
+  {cross_referenced_findings}
 
-  Compile a comprehensive 6-section research document with:
-  1. Executive Summary
-  2. Table of Contents
-  3. Comprehensive Analysis & Findings
-  4. Comparative Assessment & Cross-Referenced Evidence
-  5. Strategic Conclusions
-  6. Grounded References & Source Citations
+  Structure (scale each part to the question; omit parts that add nothing): a short executive summary with the answer and confidence; findings by theme with evidence and strength; comparison of sources and positions where they differ; limitations and gaps; conclusions or recommendations when they follow; and a list of the sources actually used. Cite each material claim with its source link. Do not invent citations, statistics or quotations, do not state anything the synthesis does not support, and do not restate the same finding in several sections.
