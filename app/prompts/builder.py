@@ -269,7 +269,7 @@ class PromptBuilder:
 
     def _format_memory_long_term(self, memory: MemoryContext) -> str:
         """Formats long-term memory facts as a structured section."""
-        lines = ["## What I Know About You (Long-term Facts)"]
+        lines = ["## What I Know About You (Long-term Facts: background only; use only when relevant to the current message, never offer them as topics)"]
         for fact in memory.long_term_facts:
             lines.append(f"- {fact.statement} (Confidence: {fact.confidence:.2f})")
         return "\n".join(lines)
@@ -338,7 +338,7 @@ class PromptBuilder:
 
     def _format_history(self, messages: list[Message]) -> str:
         """Formats short-term conversation history."""
-        lines = ["## Recent Conversation History"]
+        lines = ["## Recent Conversation History (the current message continues this conversation; interpret it in light of the latest topic here)"]
         for msg in messages:
             role = msg.role.capitalize()
             lines.append(f"{role}: {msg.content.strip()}")
