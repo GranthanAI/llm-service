@@ -67,6 +67,55 @@ _TONE = {
 }
 
 
+HINGLISH_RULES = (
+    "Hinglish means Hindi written in the English (Roman) alphabet, naturally mixed with English the way "
+    "Indian speakers write in chat. Write full sentences with Hindi grammar (hai, ke, ka, ki, ko, se, mein, "
+    "par, karta/karti hai, taaki, nahi, kyunki, toh) and keep technical terms, code, identifiers, commands, "
+    "URLs, file names and quoted text in their original English form. Never use Devanagari script, and do not "
+    "answer in plain English with a few Hindi words added. "
+    "Example: \"KV cache previous tokens ke keys aur values store karta hai, taaki har naye token ke liye "
+    "model ko saari previous calculations dobara na karni padein.\" "
+    "Material from documents, web results or memory in English or Hindi must be explained in Hinglish; "
+    "quote only short original fragments."
+)
+
+
+def language_rule(prefs: GenerationPreferences) -> str | None:
+    """The language instruction, or None for Auto (answer in the language of the message)."""
+    if not prefs.language or prefs.language == "auto":
+        return None
+    if prefs.language == "hinglish":
+        return (
+            "Respond in Hinglish unless the user explicitly asks for a different language in their message. "
+            + HINGLISH_RULES
+        )
+    name = prefs.language_name or prefs.language
+    return (
+        f"Respond in {name} unless the user explicitly asks for a different language in their message. "
+        "Keep code, commands, quoted text, file names and citations exactly as they are."
+    )
+
+
+def language_reminder(prefs: GenerationPreferences) -> str | None:
+    """A short reminder placed right before the user's message. Retrieved passages and search results
+    are often in another language or script and can otherwise pull the answer away from the preference."""
+    if not prefs.language or prefs.language == "auto":
+        return None
+    if prefs.language == "hinglish":
+        return (
+            "## Response Language\nAnswer in Hinglish (Hindi in English/Roman script mixed with English; "
+            "no Devanagari), even if the documents, search results or notes above are in another language. "
+            "Keep code, identifiers, URLs and quotes unchanged. If the message below explicitly asks for another "
+            "language, use that instead."
+        )
+    name = prefs.language_name or prefs.language
+    return (
+        f"## Response Language\nAnswer in {name}, even if the documents, search results or notes above are in "
+        "another language, unless the message below explicitly asks for a different language. Keep code, "
+        "identifiers, URLs and quotes unchanged."
+    )
+
+
 def format_preferences_block(prefs: GenerationPreferences) -> str:
     """The system-prompt block. Empty string when everything is at its default and there
     are no personal instructions (no change to the prompt at all)."""
@@ -80,12 +129,9 @@ def format_preferences_block(prefs: GenerationPreferences) -> str:
         f"- Length: {_LENGTH[prefs.answer_length]}",
         f"- Tone: {_TONE[prefs.tone]}",
     ]
-    if prefs.language and prefs.language != "auto":
-        name = prefs.language_name or prefs.language
-        lines.append(
-            f"- Language: Respond in {name} unless the user explicitly asks for a different language in "
-            "their message. Keep code, commands, quoted text, file names and citations exactly as they are."
-        )
+    rule = language_rule(prefs)
+    if rule:
+        lines.append(f"- Language: {rule}")
     else:
         lines.append("- Language: Respond in the language of the user's message.")
     if prefs.citations == "hide":

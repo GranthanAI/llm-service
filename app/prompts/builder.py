@@ -10,7 +10,7 @@ import structlog
 import tiktoken
 
 from app.config.logging import get_logger
-from app.models.generation_preferences import format_preferences_block
+from app.models.generation_preferences import format_preferences_block, language_reminder
 from app.context.schemas import GraphContext, MemoryContext, Message, RetrievalContext
 from app.models.pipeline_context import PipelineContext
 from app.models.tool import ToolResult
@@ -225,6 +225,19 @@ class PromptBuilder:
                         trimmable=True,
                     )
                 )
+
+        # 7b. Response language reminder, right before the question (never trimmed)
+        reminder = language_reminder(ctx.preferences)
+        if reminder:
+            sections.append(
+                PromptSection(
+                    name="language_reminder",
+                    content=reminder,
+                    priority=10,
+                    token_count=_count_tokens(reminder),
+                    trimmable=False,
+                )
+            )
 
         # 8. User Query (Priority 10 - Highest, never trimmed)
         user_query_content = f"## Current User Message\n{result.user_message or ctx.user_message}"

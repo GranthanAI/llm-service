@@ -190,3 +190,52 @@ async def test_show_citations_keeps_them():
     pub = CapturingPublisher()
     await pub.publish_response(ctx, "answer")
     assert pub.of("chat.response.generated")[0].citations[0]["source_name"] == "a.pdf"
+
+
+# ---------------------------------------------------------------- Hinglish
+
+def _hinglish():
+    from app.models.generation_preferences import GenerationPreferences
+    return GenerationPreferences(language="hinglish", language_name="Hinglish")
+
+
+def test_hinglish_rule_is_specific_and_keeps_code_and_precedence():
+    from app.models.generation_preferences import format_preferences_block
+
+    block = format_preferences_block(_hinglish())
+    assert "Hindi written in the English (Roman) alphabet" in block and "Never use Devanagari" in block
+    assert "unless the user explicitly asks for a different language" in block
+    assert "KV cache previous tokens ke keys aur values" in block        # the target style example
+    assert "code, identifiers" in block
+
+
+def test_auto_language_is_unchanged_and_other_languages_keep_the_generic_rule():
+    from app.models.generation_preferences import GenerationPreferences, format_preferences_block, language_reminder
+
+    assert format_preferences_block(GenerationPreferences()) == ""
+    assert language_reminder(GenerationPreferences()) is None
+    hi = GenerationPreferences(language="hi", language_name="Hindi")
+    assert "Respond in Hindi" in format_preferences_block(hi) and "Hinglish" not in format_preferences_block(hi)
+
+
+@pytest.mark.parametrize("mode,engine", [("default", "mode_handler"), ("tutor", "mode_handler"), ("code", "mode_handler"),
+                                         ("web_search", "mode_handler"), ("ask_files", "mode_handler"),
+                                         ("smart", "langgraph"), ("deep_research", "langgraph")])
+def test_every_mode_prompt_carries_the_hinglish_rule_and_reminder_before_the_question(mode, engine):
+    from app.context.schemas import ContextBundle, DocumentChunk, RetrievalContext
+    from app.models.pipeline_context import PipelineContext
+    from app.prompts.builder import PromptBuilder
+    from app.prompts.loader import PromptLoader
+    from app.prompts.registry import PromptRegistry
+    from app.workflow_engine.workflow_result import WorkflowResult
+
+    chunk = DocumentChunk(chunk_id="c1", file_id="d", source_name="paper.pdf", content="Caches reuse keys.", score=0.9, page_number=1, section="")
+    ctx = PipelineContext(conversation_id="c", user_id="u", message_id="m", request_id="r", user_message="explain KV cache",
+                          file_ids=["d"], preferences=_hinglish(),
+                          context_bundle=ContextBundle(retrieval=RetrievalContext(chunks=[chunk], total_chunks=1, status="OK")))
+    result = WorkflowResult(mode=mode, engine_type=engine, draft_content="English draft", user_message=ctx.user_message)
+    composed = PromptBuilder(registry=PromptRegistry(loader=PromptLoader())).build(result, ctx)
+    system = composed.messages[0]["content"]
+    user = composed.messages[1]["content"]
+    assert "Hinglish" in system and "Never use Devanagari" in system
+    assert user.index("## Response Language") < user.index("## Current User Message")   # right before the question
