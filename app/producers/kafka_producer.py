@@ -221,7 +221,8 @@ class KafkaPublisher:
                     ],
                 )
             ),
-            citations=_build_citations(ctx),
+            # The user's "hide citations" preference: no sources attached to the answer.
+            citations=[] if ctx.preferences.citations == "hide" else _build_citations(ctx),
             trace_context=TraceContext(traceparent=ctx.trace_id),
             status="success",
             timestamp=datetime.now(UTC),

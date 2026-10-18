@@ -23,6 +23,15 @@ class HistoryMessage(BaseModel):
     content: str
 
 
+class DefaultsApplied(BaseModel):
+    """Which of mode_hint / selected_tools came from the user's saved defaults (not an
+    explicit choice on this message). Saved defaults that are no longer available are
+    skipped; explicit choices are validated strictly."""
+
+    mode: bool = False
+    tools: bool = False
+
+
 class ChatMessageCreatedEvent(BaseModel):
     """
     Kafka event consumed from topic: chat.message.created.
@@ -30,7 +39,7 @@ class ChatMessageCreatedEvent(BaseModel):
     """
 
     event_type: str = "chat.message.created"
-    schema_version: str = "2.1"
+    schema_version: str = "2.2"
     # Request/correlation identity. For a normal send this is the user's message
     # id; for a regeneration it is a fresh request id. It is NOT the id of the
     # assistant message that will hold the reply.
@@ -48,6 +57,10 @@ class ChatMessageCreatedEvent(BaseModel):
     file_ids: list[str] = Field(default_factory=list)
     # Recent finished turns before this request, oldest first. Optional/additive (older producers omit it).
     history: list[HistoryMessage] = Field(default_factory=list)
+    # 2.2 (additive): generation preferences resolved by Conversation Service at send
+    # time (see app/models/generation_preferences.py) and which choices came from saved defaults.
+    preferences: dict[str, Any] = Field(default_factory=dict)
+    defaults_applied: DefaultsApplied = Field(default_factory=DefaultsApplied)
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_context: TraceContext = Field(default_factory=TraceContext)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

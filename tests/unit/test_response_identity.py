@@ -66,7 +66,7 @@ def test_request_event_preserves_both_identities_through_json():
     parsed = ChatMessageCreatedEvent.model_validate_json(wire)
     assert parsed.message_id == REQ and parsed.response_message_id == RESP
     assert parsed.message_id != parsed.response_message_id
-    assert json.loads(wire)["schema_version"] == "2.1"
+    assert json.loads(wire)["schema_version"] == "2.2"
 
 
 def test_legacy_event_without_response_id_still_deserialises_as_none():

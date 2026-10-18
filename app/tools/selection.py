@@ -57,6 +57,31 @@ def normalize_selection(selected: list[str] | None) -> list[str]:
     return list(seen)
 
 
+def filter_default_tools(selected: list[str] | None, registry: ToolRegistry | None) -> tuple[list[str], list[str]]:
+    """Saved *default* tools are applied only where they still work: unknown, disabled,
+    unconfigured or not-runnable-from-chat tools are dropped (not an error, the user did
+    not choose them for this message), and the live MAX_SELECTED_TOOLS cap applies.
+    Returns (kept, dropped)."""
+    names = normalize_selection(selected)
+    if not names or registry is None:
+        return [], names
+    kept: list[str] = []
+    dropped: list[str] = []
+    for name in names:
+        ok = registry.is_enabled(name)
+        if ok:
+            tool = registry.get(name)
+            ok = tool.is_available()
+            if ok:
+                required = list((tool.get_schema().parameters or {}).get("required", []))
+                ok = all(r in _TEXT_PARAMS for r in required)
+        if ok and len(kept) < MAX_SELECTED_TOOLS:
+            kept.append(name)
+        else:
+            dropped.append(name)
+    return kept, dropped
+
+
 def build_selected_calls(
     selected: list[str] | None, registry: ToolRegistry | None, user_message: str
 ) -> list[ToolCall]:

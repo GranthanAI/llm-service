@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.context.schemas import ContextBundle
 from app.models.execution_plan import ExecutionPlan, UserMode
+from app.models.generation_preferences import GenerationPreferences, normalize_preferences
 
 if TYPE_CHECKING:
     from app.models.request import ChatMessageCreatedEvent
@@ -44,6 +45,8 @@ class PipelineContext(BaseModel):
     search_query: str | None = None
     # Earlier turns from the request event, used when the memory service cannot supply history.
     event_history: list[tuple[str, str]] = Field(default_factory=list)
+    # User generation preferences (length, tone, language, instructions, citations).
+    preferences: GenerationPreferences = Field(default_factory=GenerationPreferences)
 
     # Context Bundle (set by ContextCollector)
     context_bundle: ContextBundle | None = None
@@ -96,5 +99,6 @@ class PipelineContext(BaseModel):
             file_ids=event.file_ids,
             selected_tools=list(event.selected_tools or []),
             event_history=[(h.role, h.content) for h in event.history],
+            preferences=normalize_preferences(event.preferences),
             started_at=datetime.now(UTC),
         )

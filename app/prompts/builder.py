@@ -9,6 +9,7 @@ import structlog
 import tiktoken
 
 from app.config.logging import get_logger
+from app.models.generation_preferences import format_preferences_block
 from app.context.schemas import GraphContext, MemoryContext, Message, RetrievalContext
 from app.models.pipeline_context import PipelineContext
 from app.models.tool import ToolResult
@@ -238,8 +239,11 @@ class PromptBuilder:
     ) -> str:
         """Renders system prompt template with user profile information."""
         user_name = ctx.user_id or "User"
-        base_system = template.system.replace("{user_name}", user_name)
-        return base_system.strip()
+        base_system = template.system.replace("{user_name}", user_name).strip()
+        # User preferences come AFTER the base instructions and state they cannot
+        # override them (see app/models/generation_preferences.py). Empty when all defaults.
+        preferences_block = format_preferences_block(ctx.preferences)
+        return f"{base_system}\n\n{preferences_block}" if preferences_block else base_system
 
     def _format_memory_long_term(self, memory: MemoryContext) -> str:
         """Formats long-term memory facts as a structured section."""

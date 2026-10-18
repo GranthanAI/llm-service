@@ -26,10 +26,10 @@ from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.fast_path import is_simple_smalltalk
 from app.request_analyzer.safe_default import SafeDefaultFactory
 from app.context.schemas import ContextBundle, MemoryContext, Message, Role
-from app.exceptions.user_facing import DocumentContextUnavailableError
+from app.exceptions.user_facing import DocumentContextUnavailableError, InvalidModeError
 from app.models.execution_plan import UserMode
 from app.tools.query_rewrite import SearchQueryRewriter
-from app.tools.selection import build_selected_calls
+from app.tools.selection import build_selected_calls, filter_default_tools
 from app.workflow_engine.modes import apply_requested_mode, resolve_requested_mode
 from app.security.pii import PIIDetector
 from app.security.sanitizer import InputSanitizer
@@ -124,10 +124,23 @@ class RequestPipeline:
 
             # Explicit tool selection: validate against the live registry BEFORE doing any work.
             # Unknown / disabled / un-runnable tools are rejected with a clear message; nothing runs.
+            # Saved DEFAULT tools (not chosen on this message) are filtered to what still
+            # works instead of failing the message; explicit choices stay strict.
+            if event.defaults_applied.tools:
+                ctx.selected_tools, dropped_tools = filter_default_tools(ctx.selected_tools, self.tool_registry)
+                if dropped_tools:
+                    self.logger.info("default_tools_skipped", dropped=dropped_tools, **ids)
             selected_calls = build_selected_calls(ctx.selected_tools, self.tool_registry, ctx.user_message)
             timing["tools_selected"] = len(selected_calls)
             # Explicit response mode (None = Auto). Unknown / disabled modes are rejected, never ignored.
-            requested_mode = resolve_requested_mode(event.mode_hint, self.config)
+            # A saved DEFAULT mode that is no longer available falls back to Auto.
+            try:
+                requested_mode = resolve_requested_mode(event.mode_hint, self.config)
+            except InvalidModeError:
+                if not event.defaults_applied.mode:
+                    raise
+                self.logger.info("default_mode_skipped", mode=event.mode_hint, **ids)
+                requested_mode = None
             timing["mode"] = requested_mode.value if requested_mode else "auto"
 
             # Fast path: an obvious greeting / thanks / goodbye needs no Memory/Graph context,
