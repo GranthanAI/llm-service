@@ -6,7 +6,7 @@ Implements LLD v2.0 Section 3.3 and Section 25.
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,7 +60,40 @@ class LLMServiceConfig(BaseSettings):
     # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
     # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input
     # tokens/min on qwen): the prompt AND the answer must both fit. 0 = no cap (model's full window).
+    # LEGACY / rate-limit guard. Kept so existing deployments behave the same: when > 0 it is an extra hard cap on the
+    # INPUT tokens of one request (useful on rate-limited tiers). It is NOT the context budget (see CONTEXT_BUDGET_*
+    # below) and is only ever applied as a minimum. Set to 0 on accounts whose rate limit is not the constraint.
     prompt_token_budget: int = 5000
+
+    # ---- Context budget (application policy; independent of provider rate limits) ----
+    # Max tokens one request's effective context may use (system + history + memory + retrieval + tools + output
+    # reserve + safety margin). The model's real window is a second, independent ceiling: both must hold.
+    context_budget_enabled: bool = True          # False: only the model's window (and the legacy cap) limit a request
+    context_budget_default_tokens: int = Field(default=150_000, ge=1_000)
+    context_budget_groq_tokens: int | None = Field(default=150_000, ge=1_000)    # None -> default
+    context_budget_gemini_tokens: int | None = Field(default=150_000, ge=1_000)  # None -> default
+    # Optional per-model overrides, JSON: {"groq:openai/gpt-oss-120b": 100000, "gemini-1.5-flash": 200000}
+    # (key = "<provider>:<model>" or just "<model>").
+    context_budget_model_overrides: dict[str, int] = Field(default_factory=dict)
+    # Real context windows of models that are NOT in the built-in table, JSON: {"qwen/qwen3.8-27b": 131072}. Verify
+    # against the provider's documentation: an unregistered model uses the conservative window below (with a warning).
+    context_model_windows: dict[str, int] = Field(default_factory=dict)
+    context_unknown_model_window_tokens: int = Field(default=32_768, ge=2_048)
+
+    # ---- Automatic compaction ----
+    context_compaction_enabled: bool = True
+    # Compact when the estimated input reaches this fraction of the effective input budget (or exceeds it).
+    context_compaction_trigger_ratio: float = 0.85
+    # ...and aim for this fraction afterwards.
+    context_compaction_target_ratio: float = 0.65
+    # Most recent messages that are kept verbatim whenever feasible.
+    context_compaction_min_recent_messages: int = Field(default=6, ge=1, le=100)
+
+    # ---- Token safety ----
+    # Fraction of the budget held back because token counts are estimates (no provider tokenizer locally).
+    context_token_safety_margin: float = 0.05
+    # Output tokens reserved when the request does not state its own max_tokens.
+    context_output_token_reserve: int = Field(default=8192, ge=256)
     # Order in which answer generation tries providers; the first to produce a token wins and the rest
     # are fallbacks. Entries: `groq:<model>` (same Groq key; each model has its own rate limits), `nvidia`,
     # `gemini`. Providers without credentials are skipped. NVIDIA is last because it can take 1-2 minutes.
@@ -209,6 +242,38 @@ class LLMServiceConfig(BaseSettings):
         if upper not in valid_levels:
             raise ValueError(f"Invalid log_level: {v}. Must be one of {valid_levels}")
         return upper
+
+    @field_validator("context_budget_model_overrides", "context_model_windows")
+    @classmethod
+    def _positive_token_maps(cls, v: dict[str, int]) -> dict[str, int]:
+        for key, tokens in v.items():
+            if not key.strip() or tokens < 1_000:
+                raise ValueError(f"token budgets/windows must be >= 1000 and keyed by model (got {key!r}: {tokens})")
+        return v
+
+    @field_validator("context_token_safety_margin")
+    @classmethod
+    def _safety_margin(cls, v: float) -> float:
+        if not 0.0 <= v < 0.5:
+            raise ValueError("context_token_safety_margin must be in [0, 0.5)")
+        return v
+
+    @model_validator(mode="after")
+    def _context_policy_is_consistent(self):
+        """Fail at startup, never silently fall back to unsafe values."""
+        if not 0.0 < self.context_compaction_trigger_ratio <= 1.0:
+            raise ValueError("context_compaction_trigger_ratio must satisfy 0 < ratio <= 1")
+        if not 0.0 < self.context_compaction_target_ratio < self.context_compaction_trigger_ratio:
+            raise ValueError("context_compaction_target_ratio must satisfy 0 < target < trigger")
+        if self.prompt_token_budget < 0:
+            raise ValueError("prompt_token_budget must be >= 0")
+        smallest = min(
+            [self.context_budget_default_tokens]
+            + [t for t in (self.context_budget_groq_tokens, self.context_budget_gemini_tokens) if t]
+        )
+        if self.context_output_token_reserve >= smallest * (1 - self.context_token_safety_margin):
+            raise ValueError("context_output_token_reserve leaves no room for input within the smallest context budget")
+        return self
 
     @property
     def enable_smart_mode(self) -> bool:

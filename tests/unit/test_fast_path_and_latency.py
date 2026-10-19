@@ -2,6 +2,7 @@
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
+from tests.doubles import built_prompt, manager_double, trimmed_prompt
 
 import pytest
 
@@ -185,9 +186,8 @@ def _pipeline():
     engine = MagicMock()
     engine.execute = AsyncMock(return_value=MagicMock())
     builder = MagicMock()
-    builder.build = MagicMock(return_value=MagicMock())
-    cwm = MagicMock()
-    cwm.manage = MagicMock(return_value=_prompt())
+    builder.build = MagicMock(return_value=built_prompt())
+    cwm = manager_double(trimmed_prompt())
 
     async def gen(prompt, params):
         params.setdefault("_route", {}).update(provider="nvidia", fallback_used=False)

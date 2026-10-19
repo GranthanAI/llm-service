@@ -28,6 +28,7 @@ from app.consumers.kafka_consumer import KafkaConsumerEngine
 from app.context.collector import ContextCollector
 from app.context.merger import ContextMerger
 from app.context_window import ContextWindowManager
+from app.context_window.fit import build_chain_fitter
 from app.grpc.clients import (
     GraphServiceClient,
     MemoryServiceClient,
@@ -198,6 +199,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     prompt_registry = PromptRegistry(loader=prompt_loader)
     prompt_builder = PromptBuilder(registry=prompt_registry)
     context_window_manager = ContextWindowManager()
+    context_window_manager.apply_config(config)
     container.prompt_registry = prompt_registry
     container.prompt_builder = prompt_builder
     container.context_window_manager = context_window_manager
@@ -336,7 +338,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
     if chain_entries:
         generation_router = ProviderChain(
-            chain_entries, idle_timeout_s=config.generation_idle_timeout_ms / 1000.0 or None
+            chain_entries,
+            idle_timeout_s=config.generation_idle_timeout_ms / 1000.0 or None,
+            fitter=build_chain_fitter(config, context_window_manager, log),
         )
         log.info("Generation chain configured", order=[e.name for e in chain_entries])
     container.nvidia_adapter = nvidia_adapter

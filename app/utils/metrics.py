@@ -133,3 +133,26 @@ PROMPT_BUILD_DURATION = Histogram(
     ["mode"],
     buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25],
 )
+
+# ---- Context budget / compaction (labels are bounded: provider names are a fixed set, outcome a few values) ----
+CONTEXT_COMPACTION_TOTAL = Counter(
+    "llm_context_compaction_total",
+    "Context compaction decisions",
+    ["outcome"],   # skipped | compacted | no_effect | failed
+)
+CONTEXT_COMPACTION_SECONDS = Histogram("llm_context_compaction_seconds", "Time spent compacting the context")
+CONTEXT_INPUT_TOKENS = Histogram(
+    "llm_context_input_tokens",
+    "Estimated input tokens of a request",
+    ["stage", "provider"],   # stage: before | after
+    buckets=(500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 150000, 250000),
+)
+CONTEXT_BUDGET_TOKENS = Gauge("llm_context_budget_tokens", "Effective input budget in use", ["provider"])
+CONTEXT_OVERFLOW_TOTAL = Counter("llm_context_overflow_total", "Requests rejected because they cannot fit the budget", ["provider"])
+CONTEXT_ESTIMATE_RATIO = Histogram(
+    "llm_context_estimate_ratio",
+    "Provider-reported prompt tokens / our estimate (calibration signal)",
+    ["provider"],
+    buckets=(0.5, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0),
+)
+PROVIDER_RATE_LIMITED_TOTAL = Counter("llm_provider_rate_limited_total", "429 responses from providers", ["provider", "action"])

@@ -4,6 +4,7 @@ Pure local logic and fakes: no model or network calls.
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from tests.doubles import built_prompt, manager_double
 
 from app.config.settings import LLMServiceConfig
 from app.context.schemas import ContextBundle, DocumentChunk, RetrievalContext
@@ -80,9 +81,8 @@ def _pipeline(budget):
     workflow = MagicMock()
     workflow.execute = AsyncMock(return_value=MagicMock(tool_outputs=[]))
     builder = MagicMock()
-    builder.build = MagicMock(return_value=MagicMock(sections=[]))
-    cwm = MagicMock()
-    cwm.manage = MagicMock(return_value=MagicMock())
+    builder.build = MagicMock(return_value=built_prompt())
+    cwm = manager_double()
 
     async def gen(prompt, params):
         yield "ok"
@@ -111,13 +111,14 @@ def _event(text="explain closures in detail"):
 async def test_pipeline_applies_the_prompt_budget():
     pipe, cwm = _pipeline(4200)
     await pipe.run(_event())
-    assert cwm.manage.call_args.kwargs["custom_input_budget"] == 4200
+    assert cwm.manage.call_args.kwargs["custom_input_budget"] == 4200      # the legacy per-request cap applies as a minimum
 
 
-async def test_a_zero_budget_means_no_cap():
+async def test_a_zero_legacy_cap_leaves_only_the_context_budget_and_the_model_window():
     pipe, cwm = _pipeline(0)
     await pipe.run(_event())
-    assert cwm.manage.call_args.kwargs["custom_input_budget"] is None
+    effective = cwm.manage.call_args.kwargs["custom_input_budget"]
+    assert 4200 < effective <= 32768        # unknown model: the conservative window, never an unbounded request
 
 
 # ------------------------------------------------------------------ attached documents are protected

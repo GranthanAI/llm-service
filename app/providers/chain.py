@@ -7,7 +7,7 @@ streamed the turn never switches provider (that would splice two different answe
 Each entry has its own circuit breaker, so a provider that keeps failing is skipped immediately.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +15,7 @@ import structlog
 
 from app.config.logging import get_logger
 from app.context_window.models import TrimmedPrompt
+from app.exceptions.analysis import ContextOverflowError
 from app.exceptions.provider import AllProvidersFailedError
 from app.providers.base import BaseProviderAdapter
 from app.providers.router import with_deadlines
@@ -38,10 +39,14 @@ class ProviderChain:
         entries: list[ChainEntry],
         idle_timeout_s: float | None = 20.0,
         logger_instance: structlog.stdlib.BoundLogger | None = None,
+        fitter: Callable[[TrimmedPrompt, str], TrimmedPrompt] | None = None,
     ):
         if not entries:
             raise ValueError("ProviderChain needs at least one provider")
         self.entries = entries
+        # Re-validates the prompt against each provider's own context budget right before it is tried (see
+        # app.context_window.fit.build_chain_fitter). None = send the prompt as it is (legacy behaviour).
+        self.fitter = fitter
         self.idle_timeout_s = idle_timeout_s
         self.logger = logger_instance or logger
 
@@ -58,10 +63,21 @@ class ProviderChain:
                 self._record(entry.name, idx)
                 continue
 
+            attempt_prompt = prompt
+            if self.fitter is not None:
+                try:
+                    attempt_prompt = self.fitter(prompt, entry.name)
+                except ContextOverflowError as exc:
+                    # Not a provider failure and not a rate limit: the request cannot fit THIS provider's budget.
+                    failures.append((entry.name, f"context_too_large: {exc}"))
+                    self.logger.warning("Skipping provider: prompt does not fit its context budget", provider=entry.name)
+                    self._record(entry.name, idx)
+                    continue
+
             emitted = False
             try:
                 async for token in with_deadlines(
-                    entry.adapter.stream(prompt.messages, params),
+                    entry.adapter.stream(attempt_prompt.messages, params),
                     entry.first_token_timeout_s,
                     self.idle_timeout_s,
                     entry.name,

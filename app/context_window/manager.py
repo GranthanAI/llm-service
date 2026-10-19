@@ -85,6 +85,27 @@ class ContextWindowManager:
         """Registers custom context limits for a specific model."""
         self.provider_limits[model] = limits
 
+    def apply_config(self, config: Any) -> None:
+        """Registers the operator-declared model windows (CONTEXT_MODEL_WINDOWS) and sets the window used for models
+        that are not registered (CONTEXT_UNKNOWN_MODEL_WINDOW_TOKENS)."""
+        for model, window in config.context_model_windows.items():
+            self.provider_limits[model] = ModelLimits(
+                model=model, context_window=window,
+                max_output_tokens=min(config.context_output_token_reserve, max(256, window // 4)),
+                provider=model.split(":", 1)[0] if ":" in model else "groq")
+        unknown = config.context_unknown_model_window_tokens
+        self.provider_limits["default"] = ModelLimits(
+            model="default", context_window=unknown, max_output_tokens=min(1024, max(256, unknown // 4)), provider="nvidia")
+
+    def resolve_limits(self, target_model: str) -> tuple[ModelLimits | None, bool]:
+        """(limits, assumed). `assumed` is True (and limits is None) for an unregistered model; the caller then uses the
+        configured conservative window. Logged once per model."""
+        limits = self.provider_limits.get(target_model)
+        if limits is not None:
+            return limits, False
+        self.get_model_limits(target_model)          # logs the one-time warning
+        return None, True
+
     def get_model_limits(self, target_model: str) -> ModelLimits:
         """Registered limits for the model, else the conservative default (logged once per model)."""
         limits = self.provider_limits.get(target_model)

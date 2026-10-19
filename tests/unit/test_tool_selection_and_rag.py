@@ -1,6 +1,7 @@
 """Explicit tool selection (discovery, validation, dispatch) and attached-document context handling."""
 
 from unittest.mock import AsyncMock, MagicMock
+from tests.doubles import built_prompt, manager_double, trimmed_prompt
 
 import pytest
 from fastapi import FastAPI
@@ -199,9 +200,8 @@ def _pipeline(registry, *, planned=None, bundle=None):
 
     workflow.execute = execute
     builder = MagicMock()
-    builder.build = MagicMock(side_effect=lambda r, c: seen.setdefault("tool_outputs", [x.tool_name for x in r.tool_outputs]) and MagicMock(sections=[]))
-    cwm = MagicMock()
-    cwm.manage = MagicMock(return_value=MagicMock())
+    builder.build = MagicMock(side_effect=lambda r, c: (seen.setdefault("tool_outputs", [x.tool_name for x in r.tool_outputs]), built_prompt())[1])
+    cwm = manager_double()
 
     async def gen(prompt, params):
         yield "ok"

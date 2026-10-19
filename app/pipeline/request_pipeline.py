@@ -16,6 +16,7 @@ from app.config.logging import get_logger
 from app.config.settings import LLMServiceConfig, get_settings
 from app.context.collector import ContextCollector
 from app.context.merger import ContextMerger
+from app.context_window.fit import fit_prompt
 from app.context_window.manager import ContextWindowManager
 from app.models.pipeline_context import PipelineContext
 from app.models.request import ChatMessageCreatedEvent
@@ -242,20 +243,13 @@ class RequestPipeline:
                 )
 
             # 6. Context Window Management (trim to model budget)
-            if self.config.enable_nvidia:
-                target_model = self.config.nvidia_model
-                max_tokens = self.config.nvidia_max_tokens
-                provider_name = "nvidia"
-            else:
-                target_model = self.config.groq_model
-                max_tokens = self.config.groq_max_tokens
-                provider_name = "groq"
-            trimmed = self.context_window_manager.manage(
-                composed,
-                target_model=target_model,
-                custom_input_budget=self.config.prompt_token_budget or None,
-                max_output_tokens=max_tokens,
-            )
+            provider_name, target_model, max_tokens = self._first_provider()
+            trimmed, fit = fit_prompt(
+                config=self.config, manager=self.context_window_manager, prompt_builder=self.prompt_builder,
+                result=result, ctx=ctx, composed=composed, provider=provider_name, model=target_model,
+                max_output_tokens=max_tokens, logger=self.logger)
+            timing["context_tokens"] = fit.tokens_after
+            timing["context_compaction"] = fit.compaction
             t = _lap("prompt_ms", t)
 
             # 7. Generation (streaming) with provider fallback
@@ -305,6 +299,24 @@ class RequestPipeline:
                     conversation_id=ctx.conversation_id,
                     message_id=ctx.message_id,
                 )
+
+    def _first_provider(self) -> tuple[str, str, int]:
+        """(provider, model, max output tokens) of the provider that will be tried FIRST: the first entry of the
+        generation chain when one is configured, else the legacy primary. The prompt is fitted to it; other providers
+        re-validate when they are tried (see ProviderChain)."""
+        entries = getattr(self.generation_router, "entries", None)
+        if isinstance(entries, (list, tuple)) and entries:
+            name = entries[0].name
+            provider = name.split(":", 1)[0]
+            model = name.split(":", 1)[1] if ":" in name else {
+                "gemini": self.config.gemini_model, "nvidia": self.config.nvidia_model}.get(provider, name)
+        elif self.config.enable_nvidia:
+            provider, model = "nvidia", self.config.nvidia_model
+        else:
+            provider, model = "groq", self.config.groq_model
+        max_tokens = {"nvidia": self.config.nvidia_max_tokens, "gemini": self.config.gemini_max_tokens}.get(
+            provider, self.config.groq_max_tokens)
+        return provider, model, max_tokens
 
     def _ensure_conversation_history(self, ctx: PipelineContext) -> None:
         """Use the history that came with the request when the memory service supplied none (it is

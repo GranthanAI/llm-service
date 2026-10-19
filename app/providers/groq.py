@@ -4,6 +4,7 @@ Implements LLD v2.0 Section 20.2.
 """
 
 import asyncio
+import random
 import re
 import time
 from collections.abc import AsyncIterator
@@ -20,6 +21,7 @@ from app.exceptions.provider import (
 )
 from app.providers.base import TRUNCATION_NOTICE, BaseProviderAdapter
 from app.providers.models import GenerationResponse
+from app.utils import metrics
 from app.utils.metrics import TOKENS_TOTAL
 from app.utils.tracing import get_tracer
 
@@ -41,11 +43,32 @@ MAX_RATE_LIMIT_WAIT_S = 8.0
 _RETRY_AFTER = re.compile(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)\b", re.IGNORECASE)
 
 
+def _retry_after_header_s(exc: Exception) -> float | None:
+    """Seconds from a `Retry-After` response header (numeric form), when the SDK error carries the response."""
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    try:
+        raw = headers.get("retry-after") if headers is not None else None
+        return max(0.0, float(raw)) if raw is not None else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def is_context_limit_error(exc: Exception) -> bool:
+    """A request rejected for its SIZE (context window), which is not a rate limit and must not be retried as one."""
+    msg = str(exc).lower()
+    return "context_length_exceeded" in msg or "maximum context length" in msg or "reduce the length of the messages" in msg
+
+
 def rate_limit_wait_s(exc: Exception) -> float | None:
-    """Seconds Groq asks us to wait if `exc` is a rate-limit error, else None."""
+    """Seconds Groq asks us to wait if `exc` is a rate-limit error, else None (a context-size rejection is None)."""
     msg = str(exc)
+    if is_context_limit_error(exc):
+        return None
     if "429" not in msg and "rate limit" not in msg.lower():
         return None
+    header = _retry_after_header_s(exc)
+    if header is not None:
+        return header
     m = _RETRY_AFTER.search(msg)
     if not m:
         return 60.0  # unknown: treat as long
@@ -224,8 +247,12 @@ class GroqAdapter(BaseProviderAdapter):
                     if wait is not None and not emitted and wait <= MAX_RATE_LIMIT_WAIT_S and not rate_limited:
                         rate_limited = True
                         self.logger.warning("Groq rate limit reached; waiting briefly before one retry", wait_s=wait)
-                        await asyncio.sleep(wait + 0.25)
+                        metrics.PROVIDER_RATE_LIMITED_TOTAL.labels(provider="groq", action="retry").inc()
+                        # bounded, jittered backoff so concurrent requests do not retry in lock step
+                        await asyncio.sleep(wait + 0.25 + random.uniform(0.0, min(1.0, 0.25 * wait)))
                         continue
+                    if wait is not None:
+                        metrics.PROVIDER_RATE_LIMITED_TOTAL.labels(provider="groq", action="fallback").inc()
                     # Retry only when nothing has been shown to the user yet (never splice two answers).
                     if _is_spurious_tool_call(e) and not emitted and attempt < _MAX_TOOL_CALL_RETRIES:
                         attempt += 1
@@ -241,6 +268,8 @@ class GroqAdapter(BaseProviderAdapter):
         """Translates Groq SDK errors to internal ProviderError hierarchies."""
         err_msg = str(e)
         self.logger.error("Groq execution failed", error=err_msg)
+        if is_context_limit_error(e):
+            raise ProviderError(f"Groq rejected the request size (context limit): {err_msg[:200]}", provider="groq") from e
         if "429" in err_msg or "rate limit" in err_msg.lower():
             raise ProviderRateLimitError(f"Groq Rate Limit: {err_msg}", provider="groq") from e
         if "timeout" in err_msg.lower() or "timed out" in err_msg.lower():

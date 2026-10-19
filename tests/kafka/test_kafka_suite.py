@@ -9,6 +9,7 @@ Extended coverage for the full Kafka infrastructure using the actual API.
 import json
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+from tests.doubles import built_prompt, manager_double, trimmed_prompt
 
 import pytest
 
@@ -306,8 +307,7 @@ async def test_chat_consumer_with_real_pipeline_publishes_chunk_and_generated():
         mode="default", engine_type="mode_handler", messages=[{"role": "user", "content": "hi"}]
     )
 
-    context_window_manager = MagicMock()
-    context_window_manager.manage.return_value = MagicMock()
+    context_window_manager = manager_double()
 
     async def fake_stream(*_args, **_kwargs):
         for tok in ["Hi", " there"]:

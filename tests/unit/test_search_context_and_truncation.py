@@ -4,6 +4,7 @@ are never presented as complete."""
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from tests.doubles import built_prompt, manager_double, trimmed_prompt
 
 import pytest
 
@@ -106,9 +107,8 @@ def _pipeline(plan, bundle, rewriter, registry=None):
 
     workflow.execute = execute
     builder = MagicMock()
-    builder.build = MagicMock(return_value=MagicMock(sections=[]))
-    cwm = MagicMock()
-    cwm.manage = MagicMock(return_value=MagicMock())
+    builder.build = MagicMock(return_value=built_prompt())
+    cwm = manager_double()
 
     async def gen(prompt, params):
         yield "ok"

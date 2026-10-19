@@ -5,6 +5,7 @@ Management -> Generation Router -> Streaming Engine.
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from tests.doubles import built_prompt, manager_double, trimmed_prompt
 
 import pytest
 
@@ -49,9 +50,8 @@ def make_pipeline() -> tuple[RequestPipeline, dict]:
     )
     prompt_builder.build.return_value = composed
 
-    context_window_manager = MagicMock()
-    trimmed = MagicMock()
-    context_window_manager.manage.return_value = trimmed
+    trimmed = trimmed_prompt()
+    context_window_manager = manager_double(trimmed)
 
     async def fake_stream_gen(*_args, **_kwargs):
         for tok in ["Hello", " world"]:
