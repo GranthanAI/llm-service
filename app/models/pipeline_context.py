@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.context.schemas import ContextBundle
 from app.models.execution_plan import ExecutionPlan, UserMode
 from app.models.generation_preferences import GenerationPreferences, normalize_preferences
+from app.models.request import CustomModeSnapshot
 
 if TYPE_CHECKING:
     from app.models.request import ChatMessageCreatedEvent
@@ -47,6 +48,8 @@ class PipelineContext(BaseModel):
     event_history: list[tuple[str, str]] = Field(default_factory=list)
     # Ancestor turns inherited by this branch (oldest first). Always used, ahead of the branch's own turns.
     inherited_history: list[tuple[str, str]] = Field(default_factory=list)
+    # The user's custom mode for this request (immutable snapshot from Conversation Service), or None.
+    custom_mode: CustomModeSnapshot | None = None
     # Branch lineage with boundaries, root first: [{conversation_id, upto_message_id}].
     ancestors: list[dict[str, str]] = Field(default_factory=list)
     # User generation preferences (length, tone, language, instructions, citations).
@@ -105,6 +108,7 @@ class PipelineContext(BaseModel):
             event_history=[(h.role, h.content) for h in event.history if not h.inherited],
             inherited_history=[(h.role, h.content) for h in event.history if h.inherited],
             ancestors=[a.model_dump() for a in event.ancestors],
+            custom_mode=event.custom_mode,
             preferences=normalize_preferences(event.preferences),
             started_at=datetime.now(UTC),
         )

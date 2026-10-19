@@ -4,7 +4,7 @@ Implements HLD v2.0 Section 26.2 and LLD v2.0 Section 6.
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,22 @@ class AncestorRef(BaseModel):
     upto_message_id: str
 
 
+class CustomModeSnapshot(BaseModel):
+    """Immutable definition of a user's custom mode, resolved from PostgreSQL by Conversation Service and carried on
+    the event (2.3, additive). llm-service never looks custom modes up and never accepts instruction text from a
+    client: this field exists only on events produced by the owning service. The `version` pins the exact definition,
+    so a replay or an in-flight request runs the same instructions even if the mode is edited or archived later.
+
+    A custom mode is configuration for an EXISTING execution path: `direct` = the standard generation path,
+    `smart` = the Smart workflow. It grants no tools and cannot change safety rules."""
+
+    mode_id: str = Field(min_length=1, max_length=64)
+    version: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=120)
+    execution_style: Literal["direct", "smart"]
+    instructions: str = Field(min_length=1, max_length=4000)
+
+
 class DefaultsApplied(BaseModel):
     """Which of mode_hint / selected_tools came from the user's saved defaults (not an
     explicit choice on this message). Saved defaults that are no longer available are
@@ -49,7 +65,7 @@ class ChatMessageCreatedEvent(BaseModel):
     """
 
     event_type: str = "chat.message.created"
-    schema_version: str = "2.2"
+    schema_version: str = "2.3"
     # Request/correlation identity. For a normal send this is the user's message
     # id; for a regeneration it is a fresh request id. It is NOT the id of the
     # assistant message that will hold the reply.
@@ -73,6 +89,8 @@ class ChatMessageCreatedEvent(BaseModel):
     # time (see app/models/generation_preferences.py) and which choices came from saved defaults.
     preferences: dict[str, Any] = Field(default_factory=dict)
     defaults_applied: DefaultsApplied = Field(default_factory=DefaultsApplied)
+    # 2.3 (additive): the custom mode this request runs on (mode_hint is then the built-in path: default/smart).
+    custom_mode: CustomModeSnapshot | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_context: TraceContext = Field(default_factory=TraceContext)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -30,7 +30,7 @@ from app.exceptions.user_facing import DocumentContextUnavailableError, InvalidM
 from app.models.execution_plan import UserMode
 from app.tools.query_rewrite import SearchQueryRewriter
 from app.tools.selection import build_selected_calls, drop_calls_covered_by_mode, filter_default_tools
-from app.workflow_engine.modes import apply_requested_mode, resolve_requested_mode
+from app.workflow_engine.modes import apply_requested_mode, custom_mode_base, resolve_requested_mode
 from app.security.pii import PIIDetector
 from app.security.sanitizer import InputSanitizer
 from app.services.streaming_service import StreamingEngine
@@ -135,13 +135,18 @@ class RequestPipeline:
             # Explicit response mode (None = Auto). Unknown / disabled modes are rejected, never ignored.
             # A saved DEFAULT mode that is no longer available falls back to Auto.
             try:
-                requested_mode = resolve_requested_mode(event.mode_hint, self.config)
+                if event.custom_mode is not None:
+                    requested_mode = custom_mode_base(event.custom_mode, self.config)
+                else:
+                    requested_mode = resolve_requested_mode(event.mode_hint, self.config)
             except InvalidModeError:
                 if not event.defaults_applied.mode:
                     raise
-                self.logger.info("default_mode_skipped", mode=event.mode_hint, **ids)
+                self.logger.info("default_mode_skipped", mode=event.mode_hint, custom=event.custom_mode is not None, **ids)
                 requested_mode = None
+                ctx.custom_mode = None          # the default could not run: Auto, without its instructions
             timing["mode"] = requested_mode.value if requested_mode else "auto"
+            timing["custom_mode_version"] = ctx.custom_mode.version if ctx.custom_mode else None
 
             # Fast path: an obvious greeting / thanks / goodbye needs no Memory/Graph context,
             # no analysis call and no tools. Safety checks above still ran, and generation,
@@ -150,6 +155,7 @@ class RequestPipeline:
                 self.config.enable_fast_path
                 and not ctx.safety_check_failed
                 and not selected_calls
+                and ctx.custom_mode is None          # a custom mode always runs its own path
                 and is_simple_smalltalk(
                     ctx.user_message, file_ids=ctx.file_ids, mode_hint=ctx.mode_hint
                 )

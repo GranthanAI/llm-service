@@ -58,6 +58,16 @@ def resolve_requested_mode(raw: str | None, config: LLMServiceConfig) -> UserMod
     raise InvalidModeError(value, "unknown mode")
 
 
+def custom_mode_base(snapshot: Any, config: LLMServiceConfig) -> UserMode:
+    """The built-in path a custom mode executes on. `direct` runs the standard generation path (forced, so the Request
+    Analyzer cannot reclassify the user's explicit choice); `smart` runs the Smart workflow and needs it enabled."""
+    if snapshot.execution_style == "smart":
+        if not config.enable_smart_mode:
+            raise InvalidModeError(f"custom:{snapshot.mode_id}", "its Smart workflow is turned off")
+        return UserMode.SMART
+    return UserMode.DEFAULT
+
+
 def apply_requested_mode(plan: Any, mode: UserMode | None, config: LLMServiceConfig) -> Any:
     """The user's explicit choice wins over the planner's. Iterative modes get their configured loop
     budget; single-pass modes stay single-pass."""
