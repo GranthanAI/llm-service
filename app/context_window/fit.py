@@ -132,7 +132,7 @@ def fit_prompt(
         model_window=budget.model_window, window_assumed=budget.window_assumed, input_budget=budget.input_budget,
         output_reserve=budget.output_reserve, tokens_before=before, tokens_after=final, compaction=outcome,
         condensed=condensed, omitted=omitted, trimmed_sections=list(trimmed.trimmed_sections),
-        legacy_cap=budget.legacy_cap_applied)
+        legacy_cap=budget.legacy_cap_applied, tpm_cap=budget.tpm_cap_applied)
     return trimmed, report
 
 

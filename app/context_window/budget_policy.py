@@ -20,6 +20,7 @@ from app.config.settings import LLMServiceConfig
 from app.context_window.models import ModelLimits
 
 MIN_INPUT_TOKENS = 1_000
+TPM_HEADROOM_TOKENS = 200       # estimate slack inside a tokens-per-minute limit
 
 
 class ContextBudgetError(ValueError):
@@ -39,6 +40,7 @@ class ContextBudget:
     output_reserve: int
     input_budget: int
     legacy_cap_applied: bool
+    tpm_cap_applied: bool = False
 
 
 def provider_of(name: str) -> str:
@@ -89,6 +91,15 @@ def resolve_context_budget(
     margin = config.context_token_safety_margin
     input_budget = int(total * (1 - margin)) - reserve
 
+    # Rate-limit-derived cap (NOT the context window): Groq counts prompt + max_tokens against the account's
+    # tokens-per-minute limit per request, so on a limited tier the input must leave room for the whole answer or the
+    # answer is cut short (or rejected). GROQ_TPM_LIMIT=0 (paid tiers) disables it.
+    tpm_capped = False
+    if provider == "groq" and config.groq_tpm_limit > 0:
+        tpm_input = config.groq_tpm_limit - reserve - TPM_HEADROOM_TOKENS
+        if tpm_input < input_budget:
+            input_budget, tpm_capped = tpm_input, True
+
     legacy = False
     if config.prompt_token_budget and config.prompt_token_budget < input_budget:
         input_budget, legacy = config.prompt_token_budget, True
@@ -99,4 +110,5 @@ def resolve_context_budget(
         )
     return ContextBudget(provider=provider, model=model, app_budget=app_budget, app_budget_source=source,
                          model_window=window, window_assumed=assumed, total=total, safety_margin=margin,
-                         output_reserve=reserve, input_budget=input_budget, legacy_cap_applied=legacy)
+                         output_reserve=reserve, input_budget=input_budget, legacy_cap_applied=legacy,
+                         tpm_cap_applied=tpm_capped)

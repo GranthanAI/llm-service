@@ -78,7 +78,22 @@ MIN_OUTPUT_TOKENS = 1024
 _CHARS_PER_TOKEN = 3.0  # deliberately pessimistic so the estimate over-counts the prompt
 
 
+_COUNTER = None
+
+
 def estimate_prompt_tokens(messages: list[dict[str, Any]]) -> int:
+    """Prompt size for the tokens-per-minute arithmetic: a real tokenizer count (+5%) when available, else the
+    pessimistic characters/3 fallback. (Characters/3 alone over-counts by ~30% and shrank answers needlessly.)"""
+    global _COUNTER
+    try:
+        if _COUNTER is None:
+            from app.context_window.token_counter import TokenCounter
+
+            _COUNTER = TokenCounter()
+        if _COUNTER.tokenizer is not None:
+            return int(_COUNTER.count_messages(messages, "groq") * 1.05) + 50
+    except Exception:
+        pass
     return int(sum(len(str(m.get("content", ""))) for m in messages) / _CHARS_PER_TOKEN) + 50
 
 

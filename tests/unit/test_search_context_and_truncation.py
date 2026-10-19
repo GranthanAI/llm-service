@@ -273,11 +273,15 @@ def test_output_budget_shrinks_to_fit_the_tokens_per_minute_limit():
 
 async def test_groq_request_never_asks_for_more_than_the_limit_allows():
     seen = {}
-    big_prompt = [{"role": "user", "content": "x" * 15_000}]  # ~5000 estimated tokens
+    from app.providers.groq import estimate_prompt_tokens
+
+    big_prompt = [{"role": "user", "content": "alpha beta gamma delta epsilon zeta " * 700}]  # ~5000 tokens
+    estimated = estimate_prompt_tokens(big_prompt)
+    assert 4000 < estimated < 6500
     adapter = _groq([_chunk("x", "stop")], seen)
     adapter.tpm_limit = 8000
     _ = [t async for t in adapter.stream(big_prompt)]
-    assert seen["max_tokens"] < GENERATION_MAX_TOKENS and seen["max_tokens"] + 5000 <= 8000
+    assert seen["max_tokens"] < GENERATION_MAX_TOKENS and seen["max_tokens"] + estimated <= 8000
 
 
 def test_rate_limited_providers_give_an_actionable_message():

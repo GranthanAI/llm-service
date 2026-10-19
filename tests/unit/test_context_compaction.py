@@ -23,7 +23,8 @@ COUNTER = TokenCounter()
 
 
 def cfg(**over) -> LLMServiceConfig:
-    base = dict(_env_file=None, prompt_token_budget=0)           # no legacy rate-limit cap unless a test asks for it
+    # no legacy cap and no tokens-per-minute cap unless a test asks for them
+    base = dict(_env_file=None, prompt_token_budget=0, groq_tpm_limit=0)
     base.update(over)
     return LLMServiceConfig(**base)
 
@@ -440,12 +441,32 @@ def test_a_context_size_rejection_is_not_reported_as_a_rate_limit():
         adapter._handle_exception(Exception("429 rate limit reached"))
 
 
-def test_by_default_nothing_caps_the_input_below_the_context_budget():
-    c = LLMServiceConfig(_env_file=None)
+def test_by_default_nothing_caps_the_input_below_the_context_budget_except_a_paid_tier_having_no_tpm_limit():
+    c = LLMServiceConfig(_env_file=None, groq_tpm_limit=0)
     assert c.prompt_token_budget == 0
     b = resolve_context_budget(c, "groq", "m", KNOWN)
-    assert b.legacy_cap_applied is False and b.input_budget == int(150_000 * 0.95) - 8192
+    assert b.legacy_cap_applied is False and b.tpm_cap_applied is False and b.input_budget == int(150_000 * 0.95) - 8192
     shipped = {l.split("=", 1)[0]: l.split("=", 1)[1].strip() for l in
                (Path(__file__).resolve().parents[2] / ".env.example").read_text(encoding="utf-8").splitlines()
                if l and not l.startswith("#") and "=" in l}
     assert shipped["PROMPT_TOKEN_BUDGET"] == "0"
+
+
+def test_a_tokens_per_minute_limit_keeps_room_for_the_whole_answer():
+    """Groq counts prompt + max_tokens against the per-minute limit: without this the answer is squeezed to the floor
+    and cut off (observed: max_tokens=1024 on an 8000 TPM account)."""
+    c = LLMServiceConfig(_env_file=None, groq_tpm_limit=8000)
+    b = resolve_context_budget(c, "groq", "m", KNOWN, requested_output_tokens=2048)
+    assert b.tpm_cap_applied and b.input_budget == 8000 - 2048 - 200 and b.input_budget + b.output_reserve < 8000
+    gemini = resolve_context_budget(c, "gemini", "g", KNOWN, requested_output_tokens=2048)
+    assert gemini.tpm_cap_applied is False and gemini.input_budget > 100_000          # the limit is Groq's, not Gemini's
+    paid = resolve_context_budget(LLMServiceConfig(_env_file=None, groq_tpm_limit=0), "groq", "m", KNOWN, requested_output_tokens=2048)
+    assert paid.tpm_cap_applied is False and paid.input_budget > 100_000
+
+
+def test_the_prompt_estimate_for_the_tpm_arithmetic_is_not_wildly_pessimistic():
+    from app.providers.groq import estimate_prompt_tokens
+
+    text = "The quick brown fox jumps over the lazy dog. " * 400
+    real = COUNTER.count_text(text, "groq")
+    assert real <= estimate_prompt_tokens([{"role": "user", "content": text}]) <= real * 1.2
