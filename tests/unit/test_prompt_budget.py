@@ -66,7 +66,9 @@ def test_lowest_priority_context_is_cut_before_history():
 
 def test_default_budget_fits_groqs_free_tier_with_room_for_an_answer():
     c = LLMServiceConfig(_env_file=None)
-    assert 0 < c.prompt_token_budget <= 5500  # 7000 input/min (qwen) and 8000 total/min leave room for output
+    # The legacy per-request cap is OFF by default: the 150k context budget applies. A rate-limited tier opts in
+    # explicitly (PROMPT_TOKEN_BUDGET=5000 keeps a request within Groq's 8000 tokens/min with room for the answer).
+    assert c.prompt_token_budget == 0
 
 
 # ------------------------------------------------------------------ pipeline passes the budget

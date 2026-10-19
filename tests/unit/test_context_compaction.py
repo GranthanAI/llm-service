@@ -438,3 +438,14 @@ def test_a_context_size_rejection_is_not_reported_as_a_rate_limit():
     assert not isinstance(ctx_exc.value, ProviderRateLimitError)
     with pytest.raises(ProviderRateLimitError):
         adapter._handle_exception(Exception("429 rate limit reached"))
+
+
+def test_by_default_nothing_caps_the_input_below_the_context_budget():
+    c = LLMServiceConfig(_env_file=None)
+    assert c.prompt_token_budget == 0
+    b = resolve_context_budget(c, "groq", "m", KNOWN)
+    assert b.legacy_cap_applied is False and b.input_budget == int(150_000 * 0.95) - 8192
+    shipped = {l.split("=", 1)[0]: l.split("=", 1)[1].strip() for l in
+               (Path(__file__).resolve().parents[2] / ".env.example").read_text(encoding="utf-8").splitlines()
+               if l and not l.startswith("#") and "=" in l}
+    assert shipped["PROMPT_TOKEN_BUDGET"] == "0"

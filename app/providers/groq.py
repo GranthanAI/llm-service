@@ -249,7 +249,7 @@ class GroqAdapter(BaseProviderAdapter):
                         self.logger.warning("Groq rate limit reached; waiting briefly before one retry", wait_s=wait)
                         metrics.PROVIDER_RATE_LIMITED_TOTAL.labels(provider="groq", action="retry").inc()
                         # bounded, jittered backoff so concurrent requests do not retry in lock step
-                        await asyncio.sleep(wait + 0.25 + random.uniform(0.0, min(1.0, 0.25 * wait)))
+                        await asyncio.sleep(wait + 0.25 + random.uniform(0.0, min(0.25, 0.1 * wait)))
                         continue
                     if wait is not None:
                         metrics.PROVIDER_RATE_LIMITED_TOTAL.labels(provider="groq", action="fallback").inc()

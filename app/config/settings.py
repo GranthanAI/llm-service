@@ -60,10 +60,10 @@ class LLMServiceConfig(BaseSettings):
     # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
     # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input
     # tokens/min on qwen): the prompt AND the answer must both fit. 0 = no cap (model's full window).
-    # LEGACY / rate-limit guard. Kept so existing deployments behave the same: when > 0 it is an extra hard cap on the
+    # LEGACY / rate-limit guard, OFF by default (0): when > 0 it is an extra hard cap on the
     # INPUT tokens of one request (useful on rate-limited tiers). It is NOT the context budget (see CONTEXT_BUDGET_*
     # below) and is only ever applied as a minimum. Set to 0 on accounts whose rate limit is not the constraint.
-    prompt_token_budget: int = 5000
+    prompt_token_budget: int = 0
 
     # ---- Context budget (application policy; independent of provider rate limits) ----
     # Max tokens one request's effective context may use (system + history + memory + retrieval + tools + output
