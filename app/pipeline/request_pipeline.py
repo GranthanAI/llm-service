@@ -254,6 +254,7 @@ class RequestPipeline:
                 composed,
                 target_model=target_model,
                 custom_input_budget=self.config.prompt_token_budget or None,
+                max_output_tokens=max_tokens,
             )
             t = _lap("prompt_ms", t)
 

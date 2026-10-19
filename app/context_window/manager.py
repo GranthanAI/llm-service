@@ -56,10 +56,13 @@ class ContextWindowManager:
             max_output_tokens=4096,
             provider="groq",
         ),
+        # Used ONLY for a model that has no registered limits (never silently a large window): deliberately
+        # conservative, so an unregistered model can at worst be under-used, never overflowed. A warning is logged
+        # once per model; register real limits with register_model_limits() / pass model_limits=.
         "default": ModelLimits(
             model="default",
-            context_window=131072,
-            max_output_tokens=4096,
+            context_window=8192,
+            max_output_tokens=1024,
             provider="nvidia",
         ),
     }
@@ -74,6 +77,7 @@ class ContextWindowManager:
         self.token_counter = token_counter or TokenCounter()
         self.trimmer = trimmer or PriorityTrimmer(token_counter=self.token_counter)
         self.provider_limits = model_limits or dict(self.DEFAULT_MODEL_LIMITS)
+        self._warned_unknown: set[str] = set()
         self.logger = logger_instance or logger
         self.tracer = get_tracer()
 
@@ -82,8 +86,14 @@ class ContextWindowManager:
         self.provider_limits[model] = limits
 
     def get_model_limits(self, target_model: str) -> ModelLimits:
-        """Retrieves model limits or falls back to default."""
-        return self.provider_limits.get(target_model, self.provider_limits["default"])
+        """Registered limits for the model, else the conservative default (logged once per model)."""
+        limits = self.provider_limits.get(target_model)
+        if limits is not None:
+            return limits
+        if target_model not in self._warned_unknown:
+            self._warned_unknown.add(target_model)
+            self.logger.warning("unknown_model_limits", model=target_model, assumed=self.provider_limits["default"].context_window)
+        return self.provider_limits["default"]
 
     def count_tokens(self, text: str, provider: str = "nvidia") -> int:
         """Counts calibrated tokens for given text."""
@@ -98,6 +108,7 @@ class ContextWindowManager:
         prompt: ComposedPrompt,
         target_model: str = "meta/llama-3.1-405b-instruct",
         custom_input_budget: int | None = None,
+        max_output_tokens: int | None = None,
     ) -> TrimmedPrompt:
         """
         Calculates token budget, executes priority trimming if required,
@@ -108,8 +119,16 @@ class ContextWindowManager:
             span.set_attribute("mode", prompt.mode)
 
             model_limits = self.get_model_limits(target_model)
+            if max_output_tokens:
+                # Reserve what this request will actually ask for, not the model's nominal maximum.
+                model_limits = model_limits.model_copy(update={"max_output_tokens": max_output_tokens, "effective_input": 0})
+                model_limits.model_post_init(None)
             budget_allocation = BudgetCalculator.calculate(model_limits)
-            effective_budget = custom_input_budget or budget_allocation.input_budget
+            # A configured cap can only LOWER the budget: it can never push the input past the model's window
+            # (minus the reserved output).
+            effective_budget = (
+                min(custom_input_budget, budget_allocation.input_budget) if custom_input_budget else budget_allocation.input_budget
+            )
 
             original_tokens = sum(s.token_count for s in prompt.sections)
 
