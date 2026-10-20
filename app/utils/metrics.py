@@ -156,3 +156,11 @@ CONTEXT_ESTIMATE_RATIO = Histogram(
     buckets=(0.5, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0),
 )
 PROVIDER_RATE_LIMITED_TOTAL = Counter("llm_provider_rate_limited_total", "429 responses from providers", ["provider", "action"])
+
+# ---- Visualizations (all labels are small fixed sets: kind=mermaid|manim, result/category from enums) ----
+VISUALIZATION_BLOCKS_TOTAL = Counter("llm_visualization_blocks_total", "Visual blocks seen in answers", ["kind", "result"])
+VISUALIZATION_REPAIR_TOTAL = Counter("llm_visualization_repair_total", "Block repair attempts", ["kind", "result"])
+MANIM_JOBS_TOTAL = Counter("llm_manim_jobs_total", "Manim jobs by final state", ["state", "failure"])
+MANIM_RENDER_SECONDS = Histogram(
+    "llm_manim_render_seconds", "Manim render duration", [], buckets=(2, 5, 10, 20, 40, 60, 90, 180)
+)

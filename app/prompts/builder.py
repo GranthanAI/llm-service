@@ -315,6 +315,8 @@ class PromptBuilder:
         custom_block = format_custom_mode_block(ctx.custom_mode)
         if custom_block:
             base_system = f"{base_system}\n\n{custom_block}"
+        if ctx.visualization_guidance:
+            base_system = f"{base_system}\n\n{ctx.visualization_guidance}"
         preferences_block = format_preferences_block(ctx.preferences)
         return f"{base_system}\n\n{preferences_block}" if preferences_block else base_system
 

@@ -65,6 +65,39 @@ class LLMServiceConfig(BaseSettings):
     # below) and is only ever applied as a minimum. Set to 0 on accounts whose rate limit is not the constraint.
     prompt_token_budget: int = 0
 
+    # ---- Visualizations (Mermaid diagrams, Manim animations) ----
+    # Conservative defaults: Mermaid on (rendered in the browser, no server work), Manim OFF until a worker is deployed.
+    visualization_enabled: bool = True
+    mermaid_enabled: bool = True
+    manim_enabled: bool = False
+    # Modes whose prompt may offer visualizations (comma separated mode ids). Grounded modes (ask_files, web_search,
+    # deep_research) are off by default: a diagram there must reflect evidence, so enable them deliberately.
+    visualization_modes: str = "default,tutor,code,smart"
+    # Total attempts per visualization block: attempt 1 = the original, attempts 2..N = repairs (default 3 total).
+    visualization_max_attempts: int = Field(default=3, ge=1, le=5)
+    visualization_max_blocks_per_response: int = Field(default=5, ge=1, le=20)
+    manim_max_jobs_per_response: int = Field(default=1, ge=1, le=5)
+    mermaid_max_source_chars: int = Field(default=6000, ge=200, le=50_000)
+    manim_max_spec_chars: int = Field(default=4000, ge=200, le=50_000)
+    visualization_repair_enabled: bool = True
+    # Manim worker / rendering
+    manim_render_timeout_seconds: int = Field(default=90, ge=5, le=600)
+    manim_max_output_mb: int = Field(default=20, ge=1, le=200)
+    manim_max_concurrent_jobs: int = Field(default=1, ge=1, le=16)       # per worker process
+    manim_max_active_jobs_per_user: int = Field(default=2, ge=1, le=20)
+    visualization_jobs_per_user_per_hour: int = Field(default=20, ge=1, le=1000)
+    manim_job_ttl_seconds: int = Field(default=3600, ge=60)                # status records
+    manim_media_retention_hours: int = Field(default=24, ge=1)             # rendered files
+    manim_media_dir: str = "./.media/viz"
+    manim_python: str = ""                  # interpreter that has manim installed; empty = this interpreter
+    manim_quality: Literal["l", "m", "h"] = "l"
+    # True: renders run as subprocesses of this API process (single-node/dev; jobs are in memory). False: jobs go through
+    # Redis to separate `python -m app.visualization.worker` processes (the isolated deployment).
+    manim_inline_worker: bool = True
+    visualization_redis_url: str = "redis://localhost:6379/0"
+    # Shared secret the worker presents when it calls the internal repair endpoint (empty = endpoint trusts the network).
+    visualization_internal_token: SecretStr = Field(default=SecretStr(""))
+
     # ---- Context budget (application policy; independent of provider rate limits) ----
     # Max tokens one request's effective context may use (system + history + memory + retrieval + tools + output
     # reserve + safety margin). The model's real window is a second, independent ceiling: both must hold.
@@ -242,6 +275,10 @@ class LLMServiceConfig(BaseSettings):
         if upper not in valid_levels:
             raise ValueError(f"Invalid log_level: {v}. Must be one of {valid_levels}")
         return upper
+
+    @property
+    def visualization_mode_list(self) -> list[str]:
+        return [m.strip().lower() for m in self.visualization_modes.split(",") if m.strip()]
 
     @field_validator("context_budget_model_overrides", "context_model_windows")
     @classmethod

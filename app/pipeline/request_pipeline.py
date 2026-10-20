@@ -31,6 +31,7 @@ from app.exceptions.user_facing import DocumentContextUnavailableError, InvalidM
 from app.models.execution_plan import UserMode
 from app.tools.query_rewrite import SearchQueryRewriter
 from app.tools.selection import build_selected_calls, drop_calls_covered_by_mode, filter_default_tools
+from app.visualization.guidance import visualization_guidance
 from app.workflow_engine.modes import apply_requested_mode, custom_mode_base, resolve_requested_mode
 from app.security.pii import PIIDetector
 from app.security.sanitizer import InputSanitizer
@@ -185,6 +186,7 @@ class RequestPipeline:
             # Web search mode already runs the search: do not run it again for an explicit tool pick.
             selected_calls = drop_calls_covered_by_mode(selected_calls, plan.mode)
             ctx.plan = plan
+            ctx.visualization_guidance = visualization_guidance(self.config, getattr(plan.mode, "value", plan.mode))
             t = _lap("analysis_ms", t)
 
             # 4. Workflow Dispatch (Mode Handler or LangGraph)

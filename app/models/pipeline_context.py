@@ -52,6 +52,8 @@ class PipelineContext(BaseModel):
     custom_mode: CustomModeSnapshot | None = None
     # Branch lineage with boundaries, root first: [{conversation_id, upto_message_id}].
     ancestors: list[dict[str, str]] = Field(default_factory=list)
+    # Prompt addendum for optional Mermaid/Manim blocks (set by the pipeline from the final mode; "" = none).
+    visualization_guidance: str = ""
     # User generation preferences (length, tone, language, instructions, citations).
     preferences: GenerationPreferences = Field(default_factory=GenerationPreferences)
 
