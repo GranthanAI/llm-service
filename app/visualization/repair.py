@@ -27,11 +27,11 @@ _MERMAID_RULES = (
 
 
 def _manim_rules() -> str:
-    names = ", ".join(t["name"] for t in template_catalog())
+    names = "; ".join(f"{t['name']} e.g. {json.dumps(t['example'], separators=(',', ':'))}" for t in template_catalog())
     return (
         "You fix ONE animation specification. Reply with ONLY a corrected JSON object, no prose, no code fence: "
         '{"template": <name>, "title": <short>, "params": {...}}. Python code is never allowed. '
-        f"Allowed templates: {names}. Keep parameters small (lists of at most 10 short items)."
+        f"Allowed templates with valid example params: {names}. Pick the closest template and keep parameters small (at most 10 short plain-text items)."
     )
 
 

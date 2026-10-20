@@ -15,12 +15,25 @@ _MERMAID = (
 )
 
 
+_HINTS = {
+    "binary_search": '{"array":[sorted ints],"target":int}',
+    "sorting": '{"algorithm":"bubble|insertion|selection","array":[ints 1-99, max 10]}',
+    "recursion_stack": '{"function":"factorial|fibonacci","n":1-6}',
+    "graph_traversal": '{"algorithm":"bfs|dfs","nodes":["A","B"],"edges":[["A","B"]],"start":"A"}',
+    "message_flow": '{"actors":["Client","Server"],"messages":[{"from":"Client","to":"Server","label":"request"}]}',
+    "state_machine": '{"states":["Idle","Run"],"transitions":[{"from":"Idle","to":"Run","label":"start"}],"path":["Idle","Run"]}',
+    "text_steps": '{"steps":["line 1","line 2"]}',
+}
+
+
 def _manim() -> str:
-    names = ", ".join(TEMPLATES)
+    hints = "; ".join(f"{name} params {_HINTS[name]}" for name in TEMPLATES if name in _HINTS)
     return (
-        " When the user asks for an animation, or a step-by-step algorithm is clearer with motion, you may also include ONE fenced ```manim block "
-        "containing ONLY a JSON object {\"template\": <name>, \"title\": <short>, \"params\": {...}}; never Python code. "
-        f"Templates: {names}. Keep parameters small (at most 10 short items)."
+        " When the user asks for an animation (or an algorithm walkthrough is clearer with motion), include ONE fenced ```manim block "
+        'containing ONLY a JSON object {"template": <name>, "title": <short>, "params": {...}}; never Python code. Pick the CLOSEST '
+        "template: components talking to each other (architectures, protocols, request flows) -> message_flow with the components as "
+        "actors; algorithms -> their template; anything else -> text_steps. Params must follow exactly: " + hints + ". Labels are "
+        "short plain text (letters, digits, simple punctuation)."
     )
 
 

@@ -161,3 +161,13 @@ def test_builder_appends_guidance():
     from app.prompts.builder import PromptBuilder
     import inspect
     assert "visualization_guidance" in inspect.getsource(PromptBuilder._format_system)
+
+
+def test_manim_guidance_gives_exact_params_and_architecture_hint():
+    from app.config.settings import LLMServiceConfig
+    from app.visualization.guidance import visualization_guidance
+    g = visualization_guidance(LLMServiceConfig(manim_enabled=True), "default")
+    assert '"actors"' in g and "message_flow" in g and "CLOSEST" in g
+    from app.visualization.repair import build_repair_prompt
+    rules = build_repair_prompt("manim", "{}", "invalid_spec", 2).messages[0]["content"]
+    assert '"actors"' in rules and '"steps"' in rules
