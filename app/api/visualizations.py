@@ -191,7 +191,7 @@ async def cancel_job(job_id: str, container: ContainerDep, x_user_id: str | None
 class RepairRequest(BaseModel):
     kind: Literal["mermaid", "manim"]
     content: str = Field(max_length=8000)          # the failed mermaid source or manim spec JSON
-    error: str = Field(default="syntax", max_length=60)
+    error: str = Field(default="syntax", max_length=1000)
     attempt: int = Field(ge=2, le=5)
 
 
@@ -220,7 +220,7 @@ async def repair(body: RepairRequest, container: ContainerDep, x_user_id: str | 
 class InternalRepair(BaseModel):
     kind: Literal["manim"] = "manim"
     content: str = Field(max_length=8000)
-    error: str = Field(default="render_error", max_length=60)
+    error: str = Field(default="render_error", max_length=1000)
     attempt: int = Field(ge=2, le=5)
 
 

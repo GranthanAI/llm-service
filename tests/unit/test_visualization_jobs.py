@@ -318,3 +318,9 @@ def test_candidate_validation_helper():
     assert validate_candidate("mermaid", "flowchart TD\nA-->B").ok
     assert not validate_candidate("manim", "not json").ok
     assert set(TEMPLATES)
+
+
+def test_api_repair_accepts_long_browser_error_messages(tmp_path):
+    c, _ = make_client(tmp_path)
+    body = {"kind": "manim", "content": "{}", "error": "Parse error on line 2: " + "x" * 500, "attempt": 2}
+    assert c.post("/api/v1/visualizations/repair", json=body, headers=H()).status_code == 200

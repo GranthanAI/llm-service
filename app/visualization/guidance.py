@@ -9,8 +9,8 @@ _MERMAID = (
     "something that has structure or flow (an architecture, a process or pipeline, a lifecycle, a sequence of calls, a hierarchy, "
     "relationships between entities, a timeline), or asks for a diagram, include ONE fenced ```mermaid block instead of an ASCII-art "
     "drawing. NEVER draw ASCII/box-and-arrow diagrams. Rules for the block: the first line is the diagram type (flowchart TD, "
-    "sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie); put every label that has spaces or punctuation in double "
-    "quotes; no HTML, links, click lines or %% directives. Keep the written explanation complete, so the answer also works "
+    "sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie); put EVERY node label in double quotes, e.g. A[\"Producer (App 1)\"] - unquoted parentheses, slashes or colons break the diagram; "
+    "no HTML, links, click lines or %% directives. Keep the written explanation complete, so the answer also works "
     "without the diagram. Skip diagrams for simple, factual or conversational questions."
 )
 
