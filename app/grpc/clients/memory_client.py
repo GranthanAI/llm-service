@@ -70,6 +70,16 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
                 for m in resp.short_term_messages
             ]
 
+            retrieved = [
+                Message(
+                    role=Role(m.role.lower()) if m.role.lower() in [r.value for r in Role] else Role.USER,
+                    content=m.content,
+                    timestamp=datetime.fromtimestamp(m.timestamp / 1000.0, tz=UTC) if m.timestamp else datetime.now(UTC),
+                    name=m.message_id or None,
+                )
+                for m in resp.retrieved_history
+            ]
+
             facts = [
                 Fact(
                     fact_id=f.fact_id or f"fact_{i}",
@@ -85,6 +95,7 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
 
             return MemoryContext(
                 short_term_messages=messages,
+                retrieved_history=retrieved,
                 long_term_facts=facts,
                 summary=resp.medium_summary,
                 summary_version=resp.summary_version,

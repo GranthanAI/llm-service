@@ -57,6 +57,7 @@ class MemoryContext(BaseModel):
       summary              compact summary of the older part of THIS conversation
       ancestor_summaries   branch-valid summaries of ancestor conversations (root first)
       long_term_facts      durable facts about the USER (not tied to one branch)
+      retrieved_history    older original messages of THIS conversation that match the question (verbatim)
     """
 
     short_term_messages: list[Message] = Field(default_factory=list)
@@ -65,6 +66,9 @@ class MemoryContext(BaseModel):
     summary_version: int = 0
     summary_through_message_id: str = ""
     ancestor_summaries: list[AncestorSummary] = Field(default_factory=list)
+    # Older ORIGINAL messages of THIS conversation that match the current question (exact text, oldest first), supplied
+    # by the Memory Service for details a summary may have lost. Empty when nothing qualified.
+    retrieved_history: list[Message] = Field(default_factory=list)
 
 
 class EntityNode(BaseModel):
