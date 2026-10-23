@@ -148,3 +148,7 @@ cython_debug/
 # Operating System Files
 .DS_Store
 Thumbs.db
+
+# Rendered animation scratch output (must never be committed)
+.media/
+*.mp4

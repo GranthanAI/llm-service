@@ -324,3 +324,55 @@ def test_api_repair_accepts_long_browser_error_messages(tmp_path):
     c, _ = make_client(tmp_path)
     body = {"kind": "manim", "content": "{}", "error": "Parse error on line 2: " + "x" * 500, "attempt": 2}
     assert c.post("/api/v1/visualizations/repair", json=body, headers=H()).status_code == 200
+
+
+# ---- artifact-registry contract (conversation-service fingerprints with this) and repository hygiene ----------------
+
+def test_config_exposes_the_render_identity_used_in_artifact_fingerprints(tmp_path):
+    from app.visualization.manim_templates import RENDERER_VERSION
+    c, _ = make_client(tmp_path, manim_quality="m")
+    body = c.get("/api/v1/visualizations/config").json()
+    assert body["renderer_version"] == RENDERER_VERSION and body["quality"] == "m"
+
+
+def test_default_media_directory_is_outside_the_source_tree():
+    import pathlib
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    media = pathlib.Path(LLMServiceConfig().manim_media_dir).resolve()
+    assert repo not in media.parents and media != repo, "renders must never default to a path inside the repository"
+
+
+def test_rendered_media_is_git_ignored():
+    import pathlib
+    ignore = (pathlib.Path(__file__).resolve().parents[2] / ".gitignore").read_text()
+    assert ".media/" in ignore and "*.mp4" in ignore
+
+
+# ---- thumbnails ------------------------------------------------------------------------------------------------
+
+def test_media_store_keeps_an_optional_thumbnail_next_to_the_video(tmp_path):
+    store = MediaStore(str(tmp_path / "m"))
+    jid = "mj_" + "a" * 32
+    src = tmp_path / "t.png"
+    src.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 20)
+    store.save_thumbnail(jid, src)
+    assert store.thumb_path_for(jid).is_file() and store.thumb_path_for("../evil") is None
+    store.delete(jid)
+    assert not store.thumb_path_for(jid).exists()
+
+
+@pytest.mark.asyncio
+async def test_runner_stores_the_thumbnail_and_cleans_every_temp_file(tmp_path):
+    store, media = MemoryJobStore(), MediaStore(str(tmp_path / "m"))
+    jid = job_id_for(OWNER, validate_spec(SPEC).canonical_json())
+    await store.create_if_absent(JobRecord(id=jid, owner=OWNER, spec=json.loads(validate_spec(SPEC).canonical_json())))
+    video, thumb = tmp_path / "v.mp4", tmp_path / "t.png"
+    video.write_bytes(b"x" * 2000)
+    thumb.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 50)
+
+    async def fake_render(spec, **kw):
+        return RenderResult(True, path=video, thumbnail=thumb)
+
+    rec = await run_job(store, media, jid, repair=None, render=fake_render)
+    assert rec.state == JobState.READY and media.exists(jid) and media.thumb_path_for(jid).is_file()
+    assert not video.exists() and not thumb.exists()

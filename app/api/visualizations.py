@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from app.api.dependencies import ContainerDep
 from app.utils import metrics as viz_metrics
 from app.visualization.jobs import ACTIVE, JobRecord, JobState, MemoryJobStore, job_id_for
-from app.visualization.manim_templates import SpecError, template_catalog, validate_spec
+from app.visualization.manim_templates import RENDERER_VERSION, SpecError, template_catalog, validate_spec
 from app.visualization.policy import FailureCategory, user_message
 from app.visualization.renderer import MediaStore
 from app.visualization.repair import repair_block, validate_candidate
@@ -114,6 +114,10 @@ async def viz_config(container: ContainerDep) -> dict:
         "repair": cfg.visualization_repair_enabled,
         "max_blocks": cfg.visualization_max_blocks_per_response,
         "templates": [t["name"] for t in template_catalog()] if cfg.manim_enabled else [],
+        # Render-affecting identity: part of every artifact fingerprint in conversation-service, so a template or quality
+        # change produces a new artifact instead of silently reusing a video made by the old renderer.
+        "renderer_version": RENDERER_VERSION,
+        "quality": cfg.manim_quality,
     }
 
 
@@ -176,6 +180,18 @@ async def get_media(job_id: str, container: ContainerDep, x_user_id: str | None 
     if rec.state != JobState.READY or path is None or not path.is_file():
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600",
+                                                              "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/manim/jobs/{job_id}/thumbnail")
+async def get_thumbnail(job_id: str, container: ContainerDep, x_user_id: str | None = Header(default=None)):
+    """Optional preview frame (PNG). 404 when none was produced."""
+    rec = await _owned(container, job_id, x_user_id)
+    _, media = _services(container)
+    path = media.thumb_path_for(job_id)
+    if rec.state != JobState.READY or path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "private, max-age=3600",
                                                               "X-Content-Type-Options": "nosniff"})
 
 

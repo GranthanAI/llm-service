@@ -98,17 +98,23 @@ async def _run_job(
             finally:
                 watcher.cancel()
             if result.ok and result.path is not None:
+                temp_files = [result.path, result.thumbnail]       # always removed below, whatever happens to `result`
                 try:
                     key = media.save(job_id, result.path)
                 except Exception:
                     result = RenderResult(False, FailureCategory.STORAGE_FAILURE)
                 else:
-                    result.path.unlink(missing_ok=True)
+                    if result.thumbnail is not None:
+                        try:
+                            media.save_thumbnail(job_id, result.thumbnail)
+                        except Exception:
+                            pass                              # a preview is optional; the video is what matters
                     done = await store.update(job_id, JobState.READY, media_key=key, failure="", history=tracker.history)
                     return done or await store.get(job_id)
                 finally:
-                    if result.path is not None:
-                        result.path.unlink(missing_ok=True)
+                    for tmp in temp_files:
+                        if tmp is not None:
+                            tmp.unlink(missing_ok=True)
             last = result.category or FailureCategory.RENDER_ERROR
             if last == FailureCategory.CANCELLED:
                 await store.update(job_id, JobState.CANCELLED)

@@ -35,6 +35,7 @@ class RenderResult:
     category: FailureCategory | None = None
     path: Path | None = None
     detail: str = ""            # short, internal-only (never shown to users or logged with source)
+    thumbnail: Path | None = None   # optional PNG preview (last frame); a temporary copy the CALLER must move or delete
 
 
 class MediaStore:
@@ -47,6 +48,19 @@ class MediaStore:
         if not _JOB_ID.match(job_id or ""):
             return None
         return self.root / f"{job_id}.mp4"
+
+    def thumb_path_for(self, job_id: str) -> Path | None:
+        p = self.path_for(job_id)
+        return p.with_suffix(".png") if p else None
+
+    def save_thumbnail(self, job_id: str, source: Path) -> None:
+        dest = self.thumb_path_for(job_id)
+        if dest is None:
+            raise ValueError("invalid job id")
+        self.root.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".tmp")
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, dest)
 
     def save(self, job_id: str, source: Path) -> str:
         dest = self.path_for(job_id)
@@ -63,15 +77,15 @@ class MediaStore:
         return bool(p and p.is_file())
 
     def delete(self, job_id: str) -> None:
-        p = self.path_for(job_id)
-        if p and p.exists():
-            p.unlink(missing_ok=True)
+        for p in (self.path_for(job_id), self.thumb_path_for(job_id)):
+            if p and p.exists():
+                p.unlink(missing_ok=True)
 
     def purge_older_than(self, hours: float) -> int:
         if not self.root.exists():
             return 0
         cutoff, n = time.time() - hours * 3600, 0
-        for f in self.root.glob("mj_*.mp4"):
+        for f in [*self.root.glob("mj_*.mp4"), *self.root.glob("mj_*.png")]:
             if f.stat().st_mtime < cutoff:
                 f.unlink(missing_ok=True)
                 n += 1
@@ -119,6 +133,45 @@ def _dir_size(path: str) -> int:
             except OSError:
                 pass
     return total
+
+
+MAX_THUMB_BYTES = 2 * 1024 * 1024
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+async def _capture_frame(args_base: list[str], workdir: str, scene: Path, media: Path, timeout_seconds: float) -> Path | None:
+    """Best-effort preview: render only the final frame (`manim -s`). Any failure just means "no thumbnail"; it can
+    never fail or delay the video beyond its own short deadline."""
+    args = [*args_base, "-s", "--media_dir", str(media), str(scene), "GeneratedScene"]
+    kwargs: dict = {}
+    if sys.platform != "win32":
+        kwargs["start_new_session"] = True
+    else:
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, cwd=workdir, env=_scrubbed_env(workdir), stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, **kwargs)
+    except (OSError, ValueError):
+        return None
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        _kill_tree(proc)
+        await proc.wait()
+        return None
+    if proc.returncode != 0:
+        return None
+    for png in sorted(media.rglob("GeneratedScene*.png")):
+        try:
+            if png.stat().st_size <= MAX_THUMB_BYTES and open(png, "rb").read(8) == _PNG_MAGIC:
+                fd, name = tempfile.mkstemp(prefix="vizthumb_", suffix=".png")
+                os.close(fd)
+                shutil.copyfile(png, name)
+                return Path(name)
+        except OSError:
+            continue
+    return None
 
 
 def _classify_stderr(text: str) -> FailureCategory:
@@ -195,6 +248,7 @@ async def render_spec(
         os.close(fd)
         keep = Path(name)
         shutil.copyfile(videos[0], keep)
-        return RenderResult(True, path=keep)
+        thumb = await _capture_frame(args[: args.index("--disable_caching") + 1], workdir, scene, media, min(30, timeout_seconds))
+        return RenderResult(True, path=keep, thumbnail=thumb)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

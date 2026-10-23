@@ -3,7 +3,9 @@ Configuration management for LLM Service using Pydantic Settings.
 Implements LLD v2.0 Section 3.3 and Section 25.
 """
 
+import tempfile
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
@@ -88,7 +90,9 @@ class LLMServiceConfig(BaseSettings):
     visualization_jobs_per_user_per_hour: int = Field(default=20, ge=1, le=1000)
     manim_job_ttl_seconds: int = Field(default=3600, ge=60)                # status records
     manim_media_retention_hours: int = Field(default=24, ge=1)             # rendered files
-    manim_media_dir: str = "./.media/viz"
+    # Scratch copies of finished renders, served once to conversation-service which stores the verified MP4 in object
+    # storage. Deliberately OUTSIDE the source tree (system temp) so a render can never be written into the repository.
+    manim_media_dir: str = str(Path(tempfile.gettempdir()) / "granthan-viz")
     manim_python: str = ""                  # interpreter that has manim installed; empty = this interpreter
     manim_quality: Literal["l", "m", "h"] = "l"
     # True: renders run as subprocesses of this API process (single-node/dev; jobs are in memory). False: jobs go through
