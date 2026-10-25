@@ -23,6 +23,7 @@ from app.models.response import (
     MemoryUpdateRequestedEvent,
     UsageMetrics,
 )
+from app.context.timecodes import parse_time_section
 from app.utils.retry import RetryManager, RetryPolicy
 
 
@@ -39,14 +40,16 @@ def _build_citations(ctx: PipelineContext) -> list[dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        citations.append(
-            {
-                "file_id": chunk.file_id,
-                "source_name": chunk.source_name,
-                "page_number": chunk.page_number,
-                "section": chunk.section,
-            }
-        )
+        citation: dict[str, Any] = {
+            "file_id": chunk.file_id,
+            "source_name": chunk.source_name,
+            "page_number": chunk.page_number,
+            "section": chunk.section,
+        }
+        rng = parse_time_section(chunk.section)
+        if rng is not None:                       # a video transcript passage: where in the video it was said
+            citation["start_seconds"], citation["end_seconds"] = rng
+        citations.append(citation)
     return citations
 
 
