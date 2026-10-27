@@ -80,6 +80,8 @@ class ChatMessageCreatedEvent(BaseModel):
     content: str
     mode_hint: str | None = None
     selected_tools: list[str] = Field(default_factory=list)
+    # Per-message opt-in (additive): offer diagram blocks in any mode and nudge the model to use one if it helps.
+    include_diagrams: bool = False
     file_ids: list[str] = Field(default_factory=list)
     # Recent finished turns before this request, oldest first. Optional/additive (older producers omit it).
     history: list[HistoryMessage] = Field(default_factory=list)

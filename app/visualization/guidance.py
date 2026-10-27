@@ -33,14 +33,24 @@ def _manim() -> str:
         'containing ONLY a JSON object {"template": <name>, "title": <short>, "params": {...}}; never Python code. Pick the CLOSEST '
         "template: components talking to each other (architectures, protocols, request flows) -> message_flow with the components as "
         "actors; algorithms -> their template; anything else -> text_steps. Params must follow exactly: " + hints + ". Labels are "
-        "short plain text (letters, digits, simple punctuation)."
+        "short plain text (letters, digits, simple punctuation): actor names at most 16 characters (2-5 actors), message labels and step lines "
+        "at most 28 characters. The fence language MUST be exactly manim (never json). The app renders the block into a video itself, so do "
+        "not add Python, file-saving, install or `manim` command instructions, and do not mention helper libraries."
     )
 
 
-def visualization_guidance(config: LLMServiceConfig, mode: str) -> str:
-    if not config.visualization_enabled or str(mode).lower() not in config.visualization_mode_list:
+_REQUESTED = (
+    " The user switched on 'Include diagram if necessary' for this message: if a diagram or animation would make the answer "
+    "clearer, include one (a diagram of the structure, flow or steps involved); if it would not help, do not force one."
+)
+
+
+def visualization_guidance(config: LLMServiceConfig, mode: str, requested: bool = False) -> str:
+    """`requested` is the user's per-message opt-in: it offers the visual blocks in every mode (the mode list only
+    decides what is offered by default) and tells the model the user wants one when it helps. The feature flags still apply."""
+    if not config.visualization_enabled or (not requested and str(mode).lower() not in config.visualization_mode_list):
         return ""
     text = _MERMAID if config.mermaid_enabled else ""
     if config.manim_enabled:
         text = (text or "VISUALS (optional).") + _manim()
-    return text
+    return text + _REQUESTED if requested and text else text

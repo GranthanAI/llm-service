@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from app.config.logging import get_logger
+from app.exceptions.analysis import ContextOverflowError
 from app.exceptions.base import FatalError, PermanentError, RetriableError
 from app.exceptions.grpc import GRPCError
 from app.exceptions.provider import ProviderError
@@ -122,6 +123,16 @@ class ErrorHandler:
                 is_retriable=False,
                 is_fatal=True,
                 user_message="A critical service configuration error occurred.",
+            )
+
+        if isinstance(exc, ContextOverflowError):
+            # Its message is written for the user (what happened and what to do), so it is shown instead of the generic text.
+            return ErrorClassification(
+                error_type=ErrorType.ANALYSIS,
+                error_code="CONTEXT_OVERFLOW",
+                is_retriable=False,
+                is_fatal=False,
+                user_message=str(exc).replace("[CONTEXT_OVERFLOW] ", "", 1),
             )
 
         if isinstance(exc, PermanentError):

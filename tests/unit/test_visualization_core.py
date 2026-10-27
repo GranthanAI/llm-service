@@ -171,3 +171,71 @@ def test_manim_guidance_gives_exact_params_and_architecture_hint():
     from app.visualization.repair import build_repair_prompt
     rules = build_repair_prompt("manim", "{}", "invalid_spec", 2).messages[0]["content"]
     assert '"actors"' in rules and '"steps"' in rules
+
+
+# ---- json-tagged specs (a model answered ```json with a valid Manim spec and nothing rendered) -------------------------
+
+NMAP = {
+    "template": "message_flow", "title": "Nmap Scanning Workflow",
+    "params": {"actors": ["Attacker (Nmap)", "Target Host", "Network Devices"], "messages": [
+        {"from": "Attacker (Nmap)", "to": "Target Host", "label": "Host discovery (ping/ARP)"},
+        {"from": "Attacker (Nmap)", "to": "Network Devices", "label": "Traceroute / TTL probing"}]},
+}
+
+
+@pytest.mark.parametrize("tag", ["json", ""])
+def test_manim_spec_in_a_json_or_untagged_fence_still_renders(tag):
+    r = parse_response_blocks(f"Here you go:\n```{tag}\n{json.dumps(NMAP, indent=2)}\n```\nDone")
+    assert [b.type for b in r.blocks] == ["text", "manim", "text"]
+    assert r.blocks[1].spec["template"] == "message_flow"
+    validate_spec(r.blocks[1].spec)                      # and the spec itself is accepted by the renderer's validator
+
+
+@pytest.mark.parametrize("body", [
+    '{"name": "x", "version": 1}',                       # ordinary JSON stays a code block
+    '{"template": "not_a_template", "params": {}}',
+    '{"template": "message_flow"}',                      # no params
+    '[1, 2, 3]', 'not json at all',
+])
+def test_other_json_stays_ordinary_code(body):
+    r = parse_response_blocks(f"```json\n{body}\n```")
+    assert [b.type for b in r.blocks] == ["text"]
+
+
+def test_guidance_pins_the_fence_language_and_limits():
+    from app.config.settings import LLMServiceConfig
+    from app.visualization.guidance import visualization_guidance
+    text = visualization_guidance(LLMServiceConfig(), "smart")
+    if text:                                             # empty when the feature is off for the mode in this environment
+        assert "exactly manim" in text and "at most 28" in text and "at most 16" in text
+
+
+# ---- per-message "Include diagram if necessary" -----------------------------------------------------------------------
+
+def test_requested_diagrams_are_offered_in_every_mode_with_a_nudge():
+    from app.config.settings import LLMServiceConfig
+    from app.visualization.guidance import visualization_guidance
+    cfg = LLMServiceConfig()
+    assert visualization_guidance(cfg, "web_search") == ""                       # grounded modes: off unless requested
+    asked = visualization_guidance(cfg, "web_search", requested=True)
+    assert "```mermaid" in asked and "Include diagram if necessary" in asked
+    base = visualization_guidance(cfg, "smart")
+    assert "Include diagram if necessary" not in base                            # default behaviour is unchanged
+    assert visualization_guidance(cfg, "smart", requested=True).startswith(base)
+
+
+def test_requested_does_not_override_the_feature_flags():
+    from app.config.settings import LLMServiceConfig
+    off = LLMServiceConfig(visualization_enabled=False)
+    assert visualization_guidance_off(off) == ""
+
+
+def visualization_guidance_off(cfg):
+    from app.visualization.guidance import visualization_guidance
+    return visualization_guidance(cfg, "smart", requested=True)
+
+
+def test_event_carries_the_flag_into_the_pipeline_context():
+    from app.models.request import ChatMessageCreatedEvent
+    fields = ChatMessageCreatedEvent.model_fields
+    assert "include_diagrams" in fields and fields["include_diagrams"].default is False

@@ -235,6 +235,11 @@ class RequestAnalyzer:
             )
             plan.mode = UserMode.DEFAULT
 
+        # Override Rule 1b: a disabled mode can't be chosen by the planner either (Auto never lands in it)
+        if plan.mode == UserMode.DEEP_RESEARCH and not self.config.enable_deep_research_mode:
+            self.logger.info("Safety override applied: deep_research is disabled, reverted to default mode")
+            plan.mode = UserMode.DEFAULT
+
         # Override Rule 2: Web search feature flag enforcement
         if not self.config.enable_web_search and plan.tools:
             plan.tools = [t for t in plan.tools if t.tool_name != "web_search"]

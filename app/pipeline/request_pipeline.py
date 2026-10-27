@@ -27,6 +27,7 @@ from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.fast_path import is_simple_smalltalk
 from app.request_analyzer.safe_default import SafeDefaultFactory
 from app.context.schemas import ContextBundle, MemoryContext, Message, Role
+from app.exceptions.analysis import ContextOverflowError
 from app.exceptions.user_facing import DocumentContextUnavailableError, InvalidModeError
 from app.models.execution_plan import UserMode
 from app.tools.query_rewrite import SearchQueryRewriter
@@ -186,7 +187,8 @@ class RequestPipeline:
             # Web search mode already runs the search: do not run it again for an explicit tool pick.
             selected_calls = drop_calls_covered_by_mode(selected_calls, plan.mode)
             ctx.plan = plan
-            ctx.visualization_guidance = visualization_guidance(self.config, getattr(plan.mode, "value", plan.mode))
+            ctx.visualization_guidance = visualization_guidance(
+                self.config, getattr(plan.mode, "value", plan.mode), requested=ctx.include_diagrams)
             t = _lap("analysis_ms", t)
 
             # 4. Workflow Dispatch (Mode Handler or LangGraph)
@@ -245,11 +247,8 @@ class RequestPipeline:
                 )
 
             # 6. Context Window Management (trim to model budget)
-            provider_name, target_model, max_tokens = self._first_provider()
-            trimmed, fit = fit_prompt(
-                config=self.config, manager=self.context_window_manager, prompt_builder=self.prompt_builder,
-                result=result, ctx=ctx, composed=composed, provider=provider_name, model=target_model,
-                max_output_tokens=max_tokens, logger=self.logger)
+            provider_name, target_model, max_tokens, trimmed, fit = self._fit_to_first_fitting_provider(
+                result=result, ctx=ctx, composed=composed)
             timing["context_tokens"] = fit.tokens_after
             timing["context_compaction"] = fit.compaction
             t = _lap("prompt_ms", t)
@@ -302,23 +301,45 @@ class RequestPipeline:
                     message_id=ctx.message_id,
                 )
 
-    def _first_provider(self) -> tuple[str, str, int]:
-        """(provider, model, max output tokens) of the provider that will be tried FIRST: the first entry of the
-        generation chain when one is configured, else the legacy primary. The prompt is fitted to it; other providers
-        re-validate when they are tried (see ProviderChain)."""
-        entries = getattr(self.generation_router, "entries", None)
-        if isinstance(entries, (list, tuple)) and entries:
-            name = entries[0].name
+    def _provider_candidates(self) -> list[tuple[str, str, int]]:
+        """(provider, model, max output tokens) for every provider the generation chain may try, in order. Without a
+        configured chain it is the single legacy primary."""
+        def entry(name: str) -> tuple[str, str, int]:
             provider = name.split(":", 1)[0]
             model = name.split(":", 1)[1] if ":" in name else {
                 "gemini": self.config.gemini_model, "nvidia": self.config.nvidia_model}.get(provider, name)
-        elif self.config.enable_nvidia:
-            provider, model = "nvidia", self.config.nvidia_model
-        else:
-            provider, model = "groq", self.config.groq_model
-        max_tokens = {"nvidia": self.config.nvidia_max_tokens, "gemini": self.config.gemini_max_tokens}.get(
-            provider, self.config.groq_max_tokens)
-        return provider, model, max_tokens
+            max_tokens = {"nvidia": self.config.nvidia_max_tokens, "gemini": self.config.gemini_max_tokens}.get(
+                provider, self.config.groq_max_tokens)
+            return provider, model, max_tokens
+
+        entries = getattr(self.generation_router, "entries", None)
+        if isinstance(entries, (list, tuple)) and entries:
+            return [entry(e.name) for e in entries]
+        provider, model = ("nvidia", self.config.nvidia_model) if self.config.enable_nvidia else ("groq", self.config.groq_model)
+        return [entry(f"{provider}:{model}")]
+
+    def _first_provider(self) -> tuple[str, str, int]:
+        """The provider that will be tried FIRST. Other providers re-validate when they are tried (see ProviderChain)."""
+        return self._provider_candidates()[0]
+
+    def _fit_to_first_fitting_provider(self, *, result: Any, ctx: PipelineContext, composed: Any) -> tuple:
+        """Fits the prompt to the first provider in the chain; when even its mandatory content does not fit that
+        provider's budget (a small free-tier cap), the next provider is tried instead of failing the request (the chain
+        itself then skips the providers that were too small). Raises the overflow only when NO provider can take it."""
+        last: ContextOverflowError | None = None
+        for provider_name, target_model, max_tokens in self._provider_candidates():
+            try:
+                trimmed, fit = fit_prompt(
+                    config=self.config, manager=self.context_window_manager, prompt_builder=self.prompt_builder,
+                    result=result, ctx=ctx, composed=composed, provider=provider_name, model=target_model,
+                    max_output_tokens=max_tokens, logger=self.logger)
+            except ContextOverflowError as exc:
+                last = exc
+                self.logger.warning("context_overflow_trying_next_provider", provider=provider_name, model=target_model)
+                continue
+            return provider_name, target_model, max_tokens, trimmed, fit
+        assert last is not None
+        raise last
 
     def _ensure_conversation_history(self, ctx: PipelineContext) -> None:
         """Use the history that came with the request when the memory service supplied none (it is

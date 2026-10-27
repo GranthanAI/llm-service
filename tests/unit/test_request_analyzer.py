@@ -166,6 +166,21 @@ async def test_safety_override_disabled_web_search(sample_pipeline_ctx: Pipeline
 
 
 @pytest.mark.asyncio
+async def test_planner_cannot_route_to_disabled_deep_research(sample_pipeline_ctx: PipelineContext):
+    """Deep Research is off by default: Auto must fall back to default, and Smart must be unaffected."""
+    mock_groq = AsyncMock()
+    mock_groq.model = "llama-3.3-70b-versatile"
+    analyzer = RequestAnalyzer(groq_client=mock_groq)  # default config
+    mock_groq.complete.return_value = json.dumps({"mode": "deep_research", "max_iterations": 4})
+    assert (await analyzer.analyze(sample_pipeline_ctx)).mode == UserMode.DEFAULT
+    mock_groq.complete.return_value = json.dumps({"mode": "smart", "max_iterations": 2})
+    assert (await analyzer.analyze(sample_pipeline_ctx)).mode == UserMode.SMART
+    enabled = RequestAnalyzer(groq_client=mock_groq, config=LLMServiceConfig(feature_deep_research_mode=True))
+    mock_groq.complete.return_value = json.dumps({"mode": "deep_research", "max_iterations": 2})
+    assert (await enabled.analyze(sample_pipeline_ctx)).mode == UserMode.DEEP_RESEARCH
+
+
+@pytest.mark.asyncio
 async def test_safety_override_iteration_capping(sample_pipeline_ctx: PipelineContext):
     """Safety Rules 3, 4, 5: Iteration caps per mode."""
     mock_groq = AsyncMock()
@@ -174,6 +189,7 @@ async def test_safety_override_iteration_capping(sample_pipeline_ctx: PipelineCo
     config = LLMServiceConfig(
         langgraph_max_loop_iterations_smart=4,
         langgraph_max_loop_iterations_deep_research=8,
+        feature_deep_research_mode=True,  # hidden by default; the cap only applies when it is enabled
     )
     analyzer = RequestAnalyzer(groq_client=mock_groq, config=config)
 

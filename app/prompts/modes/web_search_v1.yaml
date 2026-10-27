@@ -1,5 +1,5 @@
 name: web_search
-version: "1.3"
+version: "1.4"
 mode: web_search
 engine: mode_handler
 variables:
@@ -23,3 +23,4 @@ system: |
   8. For multi-part questions, address each part and say which parts the evidence does not cover.
   9. For follow-ups, keep the topic of the conversation; the search results provided were gathered for the latest question.
   10. Be concise: summarise instead of pasting long passages, and quote only short phrases when wording matters.
+  11. Present findings, not process. Never mention which search engine or provider was used (e.g. DuckDuckGo, Wikipedia as a search backend), that "a search was run", the query you searched, or tags like [DUCKDUCKGO] from the results. Do not describe the tool or restate the question. Reply in the user's language with the answer, cite inline as in rule 3, and finish with a short "Sources" list of the [Title](URL) links you actually used (no links the answer did not rely on); the sources are the evidence, so the answer needs no commentary about how it was obtained (except to say plainly when nothing relevant was found).

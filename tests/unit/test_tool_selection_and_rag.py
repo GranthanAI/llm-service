@@ -377,7 +377,9 @@ def test_discovery_lists_selectable_modes_and_respects_feature_flags():
     from app.workflow_engine.modes import available_modes
 
     on = [m["id"] for m in available_modes(LLMServiceConfig())]
-    assert on == ["tutor", "code", "web_search", "smart", "deep_research"]  # ask_files/default are never offered
+    assert on == ["tutor", "code", "web_search", "smart"]  # deep_research is hidden by default; ask_files/default never offered
+    with_dr = [m["id"] for m in available_modes(LLMServiceConfig(feature_deep_research_mode=True))]
+    assert with_dr == ["tutor", "code", "web_search", "smart", "deep_research"]  # re-enabled by the flag alone
     off = [m["id"] for m in available_modes(LLMServiceConfig(feature_smart_mode=False, feature_deep_research_mode=False, feature_web_search=False))]
     assert off == ["tutor", "code"]
     assert all(set(m) == {"id", "name", "description"} for m in available_modes(LLMServiceConfig()))
@@ -404,7 +406,7 @@ def test_auto_means_no_explicit_mode(raw):
 def test_valid_mode_is_resolved_case_insensitively():
     from app.workflow_engine.modes import resolve_requested_mode
 
-    assert resolve_requested_mode(" Deep_Research ", LLMServiceConfig()) == UserMode.DEEP_RESEARCH
+    assert resolve_requested_mode(" Deep_Research ", LLMServiceConfig(feature_deep_research_mode=True)) == UserMode.DEEP_RESEARCH
 
 
 @pytest.mark.parametrize("raw", ["nope", "ask_files", "../x"])
@@ -474,3 +476,15 @@ async def test_invalid_mode_fails_fast_with_a_clear_message():
     event = pub.publish_error_response.await_args.args[1]
     assert event.error_code == "INVALID_MODE" and "warp_speed" in event.error_message
     collector.collect.assert_not_called()
+
+
+def test_requesting_hidden_deep_research_fails_cleanly_but_other_modes_work():
+    from app.exceptions.user_facing import InvalidModeError
+    from app.models.execution_plan import UserMode
+    from app.workflow_engine.modes import resolve_requested_mode
+
+    cfg = LLMServiceConfig()
+    with pytest.raises(InvalidModeError):
+        resolve_requested_mode("deep_research", cfg)
+    assert resolve_requested_mode("smart", cfg) == UserMode.SMART
+    assert resolve_requested_mode("deep_research", LLMServiceConfig(feature_deep_research_mode=True)) == UserMode.DEEP_RESEARCH

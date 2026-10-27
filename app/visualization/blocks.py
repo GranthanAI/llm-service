@@ -73,6 +73,20 @@ def _clean_title(value: object) -> str | None:
     return flat or None
 
 
+
+def _is_manim_spec(lines: list[str], start: int, fence: str) -> bool:
+    """A ```json (or untagged) fence whose body is exactly a Manim spec: an object with a known template and params."""
+    close = next((j for j in range(start + 1, len(lines))
+                  if lines[j].strip().startswith(fence[0] * len(fence)) and set(lines[j].strip()) == {fence[0]}), None)
+    if close is None:
+        return False
+    try:
+        spec = json.loads("\n".join(lines[start + 1:close]))
+    except (ValueError, RecursionError):
+        return False
+    from app.visualization.manim_templates import TEMPLATES
+    return isinstance(spec, dict) and spec.get("template") in TEMPLATES and isinstance(spec.get("params"), dict)
+
 def parse_response_blocks(
     text: str,
     *,
@@ -98,6 +112,8 @@ def parse_response_blocks(
     while i < len(lines):
         m = _FENCE_OPEN.match(lines[i])
         lang = (m.group("info").strip().split() or [""])[0].lower() if m else ""
+        if m and lang in ("json", "") and _is_manim_spec(lines, i, m.group("fence")):
+            lang = "manim"       # models sometimes tag the spec ```json; it is still a Manim spec and must render
         if not m or lang not in ("mermaid", "manim"):
             buffer.append(lines[i])
             i += 1

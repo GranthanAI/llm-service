@@ -40,6 +40,7 @@ class PipelineContext(BaseModel):
     file_ids: list[str] = Field(default_factory=list)
     # Tool ids the user explicitly selected (validated against the registry before use).
     selected_tools: list[str] = Field(default_factory=list)
+    include_diagrams: bool = False
     # Set when attached documents were searched but nothing relevant was found / some were skipped.
     document_notice: str | None = None
     # Standalone web-search query derived from the message + conversation (None = use the raw message).
@@ -107,6 +108,7 @@ class PipelineContext(BaseModel):
             mode_hint=mode_hint_val,
             file_ids=event.file_ids,
             selected_tools=list(event.selected_tools or []),
+            include_diagrams=bool(event.include_diagrams),
             event_history=[(h.role, h.content) for h in event.history if not h.inherited],
             inherited_history=[(h.role, h.content) for h in event.history if h.inherited],
             ancestors=[a.model_dump() for a in event.ancestors],

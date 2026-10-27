@@ -51,6 +51,9 @@ def _set_history(result: Any, ctx: Any, messages: list) -> None:
         memory.short_term_messages = list(messages)
 
 
+_REFIT_PASSES = 5  # bounded: each pass removes the measured overshoot, so it converges in 2-3
+
+
 def fit_prompt(
     *,
     config: LLMServiceConfig,
@@ -106,11 +109,15 @@ def fit_prompt(
         trimmed = manager.manage(composed, target_model=model, custom_input_budget=budget.input_budget,
                                  max_output_tokens=max_output_tokens)
         final = counter.count_messages(trimmed.messages, provider)
-        if final > budget.input_budget:
-            # The section counts under-estimated the serialized payload (role framing, provider calibration):
-            # trim again with the measured difference removed from the budget.
-            gap = final - trimmed.total_tokens
-            trimmed = manager.manage(composed, target_model=model, custom_input_budget=max(1, budget.input_budget - gap),
+        # The section counts under-estimate the serialized payload (role framing, provider calibration, rounding), so a
+        # prompt that "fits" by section count can still measure a few tokens over. Trim again, each time removing exactly
+        # the measured overshoot from the target, until it fits. A single retry left requests failing by ONE token.
+        target = budget.input_budget
+        for _ in range(_REFIT_PASSES):
+            if final <= budget.input_budget:
+                break
+            target = max(1, target - (final - budget.input_budget))
+            trimmed = manager.manage(composed, target_model=model, custom_input_budget=target,
                                      max_output_tokens=max_output_tokens)
             final = counter.count_messages(trimmed.messages, provider)
         if final > budget.input_budget:

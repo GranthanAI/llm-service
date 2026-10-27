@@ -134,7 +134,7 @@ def test_config_feature_flags_and_validation():
     config = LLMServiceConfig()
 
     assert config.feature_smart_mode is True
-    assert config.feature_deep_research_mode is True
+    assert config.feature_deep_research_mode is False  # hidden for now
     assert config.feature_web_search is True
     assert config.feature_vision is False
 

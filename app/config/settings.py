@@ -241,8 +241,10 @@ class LLMServiceConfig(BaseSettings):
             "FEATURE_SMART_MODE", "feature_smart_mode", "enable_smart_mode"
         ),
     )
+    # Hidden for now: not offered in the mode list, rejected when requested, and never chosen by the planner.
+    # Code, prompts and graph are kept. Re-enable with FEATURE_DEEP_RESEARCH_MODE=true (restart required).
     feature_deep_research_mode: bool = Field(
-        default=True,
+        default=False,
         validation_alias=AliasChoices(
             "FEATURE_DEEP_RESEARCH_MODE",
             "feature_deep_research_mode",
