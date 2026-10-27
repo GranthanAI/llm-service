@@ -207,7 +207,7 @@ def test_guidance_pins_the_fence_language_and_limits():
     from app.visualization.guidance import visualization_guidance
     text = visualization_guidance(LLMServiceConfig(), "smart")
     if text:                                             # empty when the feature is off for the mode in this environment
-        assert "exactly manim" in text and "at most 28" in text and "at most 16" in text
+        assert "exactly manim" in text and "max 28" in text and "max 16" in text
 
 
 # ---- per-message "Include diagram if necessary" -----------------------------------------------------------------------
@@ -239,3 +239,30 @@ def test_event_carries_the_flag_into_the_pipeline_context():
     from app.models.request import ChatMessageCreatedEvent
     fields = ChatMessageCreatedEvent.model_fields
     assert "include_diagrams" in fields and fields["include_diagrams"].default is False
+
+
+# ---- real model output that was rejected: long Hinglish step lines with typographic dashes ---------------------------
+
+def test_long_steps_with_typographic_punctuation_are_normalised_and_clipped_not_rejected():
+    steps = ["1. Supervised Learning – Labeled data se mapping seekhta hai",
+             "2. Unsupervised Learning – Unlabeled data se structure discover karta hai",
+             "3. Semi‑Supervised Learning – Thode labeled + bahut unlabeled data use karta hai"]
+    v = validate_spec({"template": "text_steps", "title": "ML types", "params": {"steps": steps}})
+    out = TEMPLATES["text_steps"].build(v.params)["steps"]      # what the scene actually receives
+    assert all(len(s) <= 48 and s.isascii() for s in out)
+    assert out[0].startswith("1. Supervised Learning - Labeled")
+    assert out[1].endswith("...")
+
+
+def test_injection_shaped_text_is_still_rejected_even_with_clipping():
+    with pytest.raises(SpecError):
+        validate_spec({"template": "text_steps", "params": {"steps": ["ok", "x\"; __import__('os').system('id') #" + "a" * 60]}})
+    with pytest.raises(SpecError):                                  # names are never clipped
+        validate_spec({"template": "message_flow", "params": {"actors": ["A" * 30, "B"], "messages": []}})
+
+
+def test_guidance_forbids_narrating_the_visual():
+    from app.config.settings import LLMServiceConfig
+    from app.visualization.guidance import visualization_guidance
+    text = visualization_guidance(LLMServiceConfig(manim_enabled=True), "smart")
+    assert "HARD RULES" in text and "never your JSON" in text and "NO how-to-use" in text and len(text) < 2400

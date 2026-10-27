@@ -5,13 +5,12 @@ from app.config.settings import LLMServiceConfig
 from app.visualization.manim_templates import TEMPLATES
 
 _MERMAID = (
-    "VISUALS. You can draw diagrams that the app renders for the user. When the user asks to explain, compare or design "
-    "something that has structure or flow (an architecture, a process or pipeline, a lifecycle, a sequence of calls, a hierarchy, "
-    "relationships between entities, a timeline), or asks for a diagram, include ONE fenced ```mermaid block instead of an ASCII-art "
-    "drawing. NEVER draw ASCII/box-and-arrow diagrams. Rules for the block: the first line is the diagram type (flowchart TD, "
-    "sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie); put EVERY node label in double quotes, e.g. A[\"Producer (App 1)\"] - unquoted parentheses, slashes or colons break the diagram; "
-    "no HTML, links, click lines or %% directives. Keep the written explanation complete, so the answer also works "
-    "without the diagram. Skip diagrams for simple, factual or conversational questions."
+    "VISUALS. The app renders diagrams for the user. For something with structure or flow (architecture, process, lifecycle, "
+    "call sequence, hierarchy, relationships, timeline) or when a diagram is asked for, include ONE fenced ```mermaid block; "
+    "NEVER draw ASCII/box-and-arrow art. Block rules: the first line is the type (flowchart TD, sequenceDiagram, classDiagram, "
+    "stateDiagram-v2, erDiagram, gantt, pie); put EVERY node label in double quotes, e.g. A[\"Producer (App 1)\"]; no HTML, "
+    "links, click lines or %% directives. The written answer must stand without the diagram. Skip diagrams for simple, "
+    "factual or chat questions."
 )
 
 
@@ -29,13 +28,14 @@ _HINTS = {
 def _manim() -> str:
     hints = "; ".join(f"{name} params {_HINTS[name]}" for name in TEMPLATES if name in _HINTS)
     return (
-        " When the user asks for an animation (or an algorithm walkthrough is clearer with motion), include ONE fenced ```manim block "
-        'containing ONLY a JSON object {"template": <name>, "title": <short>, "params": {...}}; never Python code. Pick the CLOSEST '
-        "template: components talking to each other (architectures, protocols, request flows) -> message_flow with the components as "
-        "actors; algorithms -> their template; anything else -> text_steps. Params must follow exactly: " + hints + ". Labels are "
-        "short plain text (letters, digits, simple punctuation): actor names at most 16 characters (2-5 actors), message labels and step lines "
-        "at most 28 characters. The fence language MUST be exactly manim (never json). The app renders the block into a video itself, so do "
-        "not add Python, file-saving, install or `manim` command instructions, and do not mention helper libraries."
+        " ANIMATIONS: when asked for an animation (or motion clarifies an algorithm), include ONE fenced ```manim block holding "
+        'ONLY JSON {"template": <name>, "title": <short>, "params": {...}}; never Python; the fence tag is exactly manim, never '
+        "json. Pick the CLOSEST template: components talking (architectures, protocols, request flows) -> message_flow; algorithms -> "
+        "their template; else text_steps. Params exactly: " + hints + ". Text is ASCII only (plain hyphen, no en/em dashes or "
+        "curly quotes); actor names max 16 chars (2-5 actors), message labels max 28, step lines max 48. "
+        "HARD RULES: the user only sees the finished video, never your JSON. So do NOT tell them to paste, load, run, render or "
+        "customize it; do NOT mention manim, templates, JSON or tools; do NOT describe or announce the visual; NO how-to-use or "
+        "next-step text. Text around the block is only the explanation they asked for."
     )
 
 

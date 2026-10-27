@@ -112,7 +112,7 @@ def test_graph_node_prompts_are_versioned_have_their_variables_and_are_loadable(
     for graph, node in (("smart", "planner"), ("smart", "generation"), ("deep_research", "analyze"),
                         ("deep_research", "compare_sources"), ("deep_research", "summarize"), ("deep_research", "generate_report")):
         template = registry.get_graph_node_template(graph, node)
-        assert template.version == "1.1"
+        assert template.version == ("1.2" if (graph, node) == ("smart", "generation") else "1.1")
         for var in template.variables:
             assert "{" + var + "}" in template.system, (graph, node, var)
     rendered = registry.render("deep_research", "generate_report", {"synthesis": "S", "user_query": "Q"})

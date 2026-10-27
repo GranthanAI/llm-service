@@ -32,7 +32,25 @@ class SpecError(ValueError):
         self.unsupported = unsupported
 
 
-def _label(value: Any, name: str, limit: int = MAX_LABEL) -> str:
+_TYPOGRAPHY = str.maketrans({
+    "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "−": "-",   # hyphens and dashes
+    "‘": "'", "’": "'", "“": "'", "”": "'",                                  # curly quotes (no double quotes)
+    "•": "-", " ": " ", " ": " ",
+})
+
+
+def _label(value: Any, name: str, limit: int = MAX_LABEL, clip: bool = False) -> str:
+    """A short display string. Typographic punctuation models like to write (en/em dash, non-breaking hyphen, curly quotes)
+    is converted to its ASCII form first; everything else must still pass the character whitelist (injection-shaped text is
+    rejected, never repaired). `clip` shortens an over-long DISPLAY line at a word boundary instead of rejecting the whole
+    animation (names and titles identify things, so they are never clipped)."""
+    if isinstance(value, str):
+        value = value.translate(_TYPOGRAPHY).replace("…", "...")
+        text = value.strip()
+        if clip and len(text) > limit and limit > 3:
+            cut = text[: limit - 3]
+            text = (cut.rsplit(" ", 1)[0] if " " in cut[limit // 2:] else cut).rstrip(" ,.;:-") + "..."
+        value = text
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > limit or not _LABEL.match(value.strip()):
         raise SpecError(f"{name} must be 1-{limit} plain characters (letters, digits and simple punctuation)")
     return value.strip()
@@ -212,7 +230,7 @@ def _message_flow(params: dict) -> dict:
     for m in messages:
         if not (isinstance(m, dict) and set(m) <= {"from", "to", "label"}) or m.get("from") not in actors or m.get("to") not in actors:
             raise SpecError("each message needs from, to (actor names) and label")
-        out.append({"from": actors.index(m["from"]), "to": actors.index(m["to"]), "label": _label(m.get("label"), "label", 28)})
+        out.append({"from": actors.index(m["from"]), "to": actors.index(m["to"]), "label": _label(m.get("label"), "label", 28, clip=True)})
     return {"actors": actors, "messages": out}
 
 
@@ -244,7 +262,7 @@ def _text_steps(params: dict) -> dict:
     steps = params.get("steps")
     if not isinstance(steps, list) or not 2 <= len(steps) <= 8:
         raise SpecError("steps must be a list of 2-8 short lines")
-    return {"steps": [_label(s, "step", 48) for s in steps]}
+    return {"steps": [_label(s, "step", 48, clip=True) for s in steps]}
 
 
 # ----------------------------------------------------------------------------- scene code (trusted, hand-written)

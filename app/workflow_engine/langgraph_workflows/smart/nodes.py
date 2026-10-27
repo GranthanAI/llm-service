@@ -14,12 +14,75 @@ from app.models.execution_plan import ToolCall
 from app.tools.dispatcher import ToolDispatcher
 from app.utils.metrics import LANGGRAPH_LOOP_ITERATIONS, LANGGRAPH_NODE_DURATION
 from app.utils.tracing import get_tracer
+from app.workflow_engine.langgraph_workflows.smart.freshness import needs_web_search
 from app.workflow_engine.langgraph_workflows.smart.state import (
     SmartGraphState,
     SubTask,
 )
 
 logger = get_logger("smart_graph_nodes")
+
+
+MAX_PLANNED_TOOLS = 4
+
+
+def _rule_based_subtasks(user_msg: str, lower_msg: str, search_needed: bool) -> list[SubTask]:
+    """Deterministic plan used only when the LLM planner is unavailable or the user explicitly asked for a search."""
+    sub_tasks: list[SubTask] = []
+    # Multi-part prompt decomposition logic
+    is_comparison = any(
+        w in lower_msg for w in ["compare", "vs", "versus", "difference between"]
+    )
+    has_code_intent = any(
+        w in lower_msg for w in ["code", "implement", "implementation", "python", "pytorch"]
+    )
+    has_benchmark_intent = any(
+        w in lower_msg
+        for w in ["benchmark", "performance", "speed", "accuracy", "evaluation", "paper"]
+    )
+
+    # A comparison only fans out into several searches when it asks for evidence (benchmarks/papers) or is
+    # time-sensitive; "difference between a list and a tuple in python" is answered without the web.
+    if is_comparison and (has_code_intent or has_benchmark_intent) and (has_benchmark_intent or search_needed):
+        # Tough prompt: generate multi-step research sub-tasks
+        sub_tasks.append(
+            SubTask(
+                id="subtask_theory",
+                description=f"Theoretical comparison and mathematical convergence: {user_msg}",
+                tool_name="web_search",
+                required=False,
+            )
+        )
+        if has_code_intent:
+            sub_tasks.append(
+                SubTask(
+                    id="subtask_code",
+                    description=f"Implementation architecture differences: {user_msg}",
+                    tool_name="web_search",
+                    required=False,
+                )
+            )
+        if has_benchmark_intent:
+            sub_tasks.append(
+                SubTask(
+                    id="subtask_benchmarks",
+                    description=f"Empirical benchmarks and experimental findings: {user_msg}",
+                    tool_name="web_search",
+                    required=False,
+                )
+            )
+    else:
+        # Standard prompt: one targeted search, only when the freshness policy says the web is needed
+        if search_needed:
+            sub_tasks.append(
+                SubTask(
+                    id="subtask_search_1",
+                    description=user_msg,
+                    tool_name="web_search",
+                    required=False,
+                )
+            )
+    return sub_tasks
 
 
 def make_planner_node(
@@ -38,76 +101,27 @@ def make_planner_node(
 
             sub_tasks: list[SubTask] = []
             lower_msg = user_msg.lower()
+            planned = list(state.get("planned_tools") or [])
+            fallback = bool(state.get("plan_is_fallback"))
+            search_needed, search_reason = needs_web_search(user_msg)
 
-            # Multi-part prompt decomposition logic
-            is_comparison = any(
-                w in lower_msg for w in ["compare", "vs", "versus", "difference between"]
-            )
-            has_code_intent = any(
-                w in lower_msg for w in ["code", "implement", "implementation", "python", "pytorch"]
-            )
-            has_benchmark_intent = any(
-                w in lower_msg
-                for w in ["benchmark", "performance", "speed", "accuracy", "evaluation", "paper"]
-            )
-
-            if is_comparison and (has_code_intent or has_benchmark_intent):
-                # Tough prompt: generate multi-step research sub-tasks
-                sub_tasks.append(
-                    SubTask(
-                        id="subtask_theory",
-                        description=f"Theoretical comparison and mathematical convergence: {user_msg}",
-                        tool_name="web_search",
-                        required=False,
-                    )
-                )
-                if has_code_intent:
-                    sub_tasks.append(
-                        SubTask(
-                            id="subtask_code",
-                            description=f"Implementation architecture differences: {user_msg}",
-                            tool_name="web_search",
-                            required=False,
-                        )
-                    )
-                if has_benchmark_intent:
-                    sub_tasks.append(
-                        SubTask(
-                            id="subtask_benchmarks",
-                            description=f"Empirical benchmarks and experimental findings: {user_msg}",
-                            tool_name="web_search",
-                            required=False,
-                        )
-                    )
+            if planned:
+                # The LLM Request Analyzer decided what to call (and with what arguments); the registry, schema validation
+                # and the loop budget are enforced when the call is dispatched. No keyword guessing on top of it.
+                source = "llm"
+                for i, call in enumerate(planned[:MAX_PLANNED_TOOLS], start=1):
+                    sub_tasks.append(SubTask(
+                        id=f"subtask_tool_{i}", description=str(call.params.get("query") or user_msg),
+                        tool_name=call.tool_name, params=dict(call.params), required=call.required))
+            elif fallback or search_reason == "explicit":
+                # The LLM planner is unavailable (safe-default plan), or the user explicitly asked to search / wants
+                # sources: the deterministic freshness policy decides.
+                source = "policy_fallback" if fallback else "policy_explicit"
+                sub_tasks.extend(_rule_based_subtasks(user_msg, lower_msg, search_needed))
             else:
-                # Standard prompt: single targeted search subtask
-                needs_search_keywords = [
-                    "who",
-                    "what",
-                    "when",
-                    "where",
-                    "why",
-                    "how",
-                    "latest",
-                    "recent",
-                    "search",
-                    "find",
-                    "look up",
-                    "explain",
-                    "paper",
-                    "research",
-                    "compare",
-                    "algorithm",
-                ]
-                if any(k in lower_msg for k in needs_search_keywords) or len(user_msg.split()) > 3:
-                    sub_tasks.append(
-                        SubTask(
-                            id="subtask_search_1",
-                            description=user_msg,
-                            tool_name="web_search",
-                            required=False,
-                        )
-                    )
+                source = "llm_no_tools"            # the LLM judged the answer needs no tool: answer directly
+            log.info("smart_plan_decision", source=source, reason=search_reason,
+                     tools=[t.tool_name for t in sub_tasks])
 
             duration = time.perf_counter() - start
             LANGGRAPH_NODE_DURATION.labels(graph="smart", node="planner").observe(duration)
@@ -144,12 +158,14 @@ def make_tool_selection_node(
                 "Selecting tool for subtask", subtask_id=next_task.id, tool=next_task.tool_name
             )
 
+            tool_name = next_task.tool_name or "web_search"
+            params = dict(next_task.params)
+            if tool_name == "web_search":
+                params.setdefault("query", next_task.description or state.get("user_message", ""))
+            params["sub_task_id"] = next_task.id      # bookkeeping only; removed before the tool is dispatched
             tool_call = ToolCall(
-                tool_name=next_task.tool_name or "web_search",
-                params={
-                    "query": next_task.description or state.get("user_message", ""),
-                    "sub_task_id": next_task.id,
-                },
+                tool_name=tool_name,
+                params=params,
                 parallel=False,
                 required=next_task.required,
             )
@@ -184,8 +200,9 @@ def make_execution_node(
                 iteration=current_iter,
             )
 
-            results = await tool_dispatcher.dispatch([next_call])
             satisfied_id = next_call.params.get("sub_task_id")
+            clean = next_call.model_copy(update={"params": {k: v for k, v in next_call.params.items() if k != "sub_task_id"}})
+            results = await tool_dispatcher.dispatch([clean])
 
             duration = time.perf_counter() - start
             LANGGRAPH_NODE_DURATION.labels(graph="smart", node="execution").observe(duration)

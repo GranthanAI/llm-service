@@ -108,6 +108,8 @@ class ModeDispatcher:
             "conversation_history": list(history),
             "loop_iteration_count": 0,
             "max_iterations": plan.max_iterations,
+            "planned_tools": list(plan.tools or []),
+            "plan_is_fallback": plan.analysis_confidence == 0.0 or plan.groq_model_used == "fallback_safe_default",
             "tool_results": [],
             "draft_response": None,
         }
