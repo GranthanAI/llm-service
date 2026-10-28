@@ -53,6 +53,19 @@ def _build_citations(ctx: PipelineContext) -> list[dict[str, Any]]:
     return citations
 
 
+def _uuid7_datetime(value: str | None) -> datetime | None:
+    """Creation time encoded in a UUIDv7 (first 48 bits = unix ms); None for any other id."""
+    import uuid as _uuid
+
+    try:
+        parsed = _uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if parsed.version != 7:
+        return None
+    return datetime.fromtimestamp(int(parsed.hex[:12], 16) / 1000.0, tz=UTC)
+
+
 class KafkaPublisher:
     """
     Centralized Kafka Event Publisher.
@@ -269,13 +282,21 @@ class KafkaPublisher:
         mode_val = (
             ctx.plan.mode.value if ctx.plan and hasattr(ctx.plan.mode, "value") else "default"
         )
+        now = datetime.now(UTC)
+        # User message: created when the client sent it (its UUIDv7 encodes that), else when this request started.
+        # Assistant message: completed now, which is after the user message by construction.
+        user_created_at = _uuid7_datetime(ctx.message_id) or ctx.started_at
         memory_event = MemoryUpdateRequestedEvent(
             conversation_id=ctx.conversation_id,
             user_id=ctx.user_id,
             user_message=ctx.user_message,
             assistant_response=full_response,
             mode=mode_val,
-            timestamp=datetime.now(UTC),
+            timestamp=now,
+            user_message_id=ctx.message_id or None,
+            assistant_message_id=ctx.response_message_id or None,
+            user_created_at=user_created_at,
+            assistant_created_at=max(now, user_created_at),
         )
         await self._send(
             topic="memory.update.requested",

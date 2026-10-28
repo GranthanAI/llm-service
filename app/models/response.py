@@ -113,6 +113,12 @@ class MemoryUpdateRequestedEvent(BaseModel):
     assistant_response: str
     mode: str = "default"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # Additive, optional (memory-service falls back to deriving ids/times for events that lack them): the real
+    # conversation-service ids of the two messages of the turn and when each was created.
+    user_message_id: str | None = None
+    assistant_message_id: str | None = None
+    user_created_at: datetime | None = None
+    assistant_created_at: datetime | None = None
 
 
 class ChatResponseCancelledEvent(BaseModel):
