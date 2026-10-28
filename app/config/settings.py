@@ -116,6 +116,13 @@ class LLMServiceConfig(BaseSettings):
     # against the provider's documentation: an unregistered model uses the conservative window below (with a warning).
     context_model_windows: dict[str, int] = Field(default_factory=dict)
     context_unknown_model_window_tokens: int = Field(default=32_768, ge=2_048)
+    # Prompt composition (what the model sees).
+    # prompt_history_as_messages: send the conversation history as real user/assistant chat messages instead of one
+    #   flattened user block. Default OFF (changes the shape of every prompt): enable per environment after a canary.
+    # prompt_retrieved_history_enabled: render the older messages memory-service retrieved for the question
+    #   ("Earlier Messages From This Conversation"). Default ON: it only adds a section when such messages exist.
+    prompt_history_as_messages: bool = False
+    prompt_retrieved_history_enabled: bool = True
 
     # ---- Automatic compaction ----
     context_compaction_enabled: bool = True

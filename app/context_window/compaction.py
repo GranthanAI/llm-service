@@ -44,8 +44,16 @@ def _tokens(counter: TokenCounter, provider: str, message: Message) -> int:
 
 
 def _clip(text: str, limit: int) -> str:
+    """One line for the note. A long message keeps its start (what was asked) AND its end (the conclusion / the answer)
+    with an explicit omission marker; keeping only the first characters loses exactly the part that matters most."""
     flat = " ".join(text.split())
-    return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "…"
+    if len(flat) <= limit:
+        return flat
+    marker = f" … [{len(flat) - limit} chars omitted] … "
+    room = max(0, limit - len(marker))
+    head = (room * 3) // 5
+    tail = room - head
+    return flat[:head].rstrip() + marker + (flat[len(flat) - tail:].lstrip() if tail else "")
 
 
 def compact_history(

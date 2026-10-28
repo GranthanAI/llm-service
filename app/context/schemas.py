@@ -24,6 +24,8 @@ class Message(BaseModel):
 
     role: Role = Role.USER
     content: str
+    # Conversation-service id of the message when known (additive; lets the same message from two sources be recognised).
+    message_id: str | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     name: str | None = None
     tool_call_id: str | None = None

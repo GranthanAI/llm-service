@@ -12,6 +12,8 @@ from app.context_window.budget import BudgetCalculator
 from app.context_window.models import ModelLimits, TrimmedPrompt
 from app.context_window.token_counter import TokenCounter
 from app.context_window.trimmer import PriorityTrimmer
+from app.config.settings import get_settings
+from app.prompts.compose import compose_messages
 from app.prompts.schemas import ComposedPrompt
 from app.utils.metrics import CONTEXT_TOKENS
 from app.utils.tracing import get_tracer
@@ -171,17 +173,8 @@ class ContextWindowManager:
                     pass
 
             # Reconstruct OpenAI-compatible message payload
-            system_sections = [s.content for s in final_sections if s.name == "system"]
-            system_prompt = "\n\n".join(system_sections)
-
-            user_sections = [s.content for s in final_sections if s.name != "system"]
-            user_prompt = "\n\n".join(user_sections)
-
-            messages: list[dict[str, Any]] = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            if user_prompt:
-                messages.append({"role": "user", "content": user_prompt})
+            messages, _system_prompt, _user_prompt = compose_messages(
+                final_sections, get_settings().prompt_history_as_messages)
 
             self.logger.info(
                 "Context window management complete",

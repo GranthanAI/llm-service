@@ -33,6 +33,12 @@ class PromptSection(BaseModel):
     priority: int = Field(default=5, ge=1, le=10)
     token_count: int = 0
     trimmable: bool = True
+    # Structured form of a conversation-history section: one {"role", "content"} per message, oldest first. The trimmer
+    # drops whole messages from the oldest end, and the composer sends them as real role-separated chat messages.
+    # `content` stays the flat rendering (token accounting, fallbacks). Never re-derived by parsing text, so a message
+    # that contains "Assistant: ..." on a line cannot forge a turn.
+    items: list[dict[str, str]] | None = None
+    header: str = ""
 
 
 class ComposedPrompt(BaseModel):

@@ -66,6 +66,7 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
                     if m.timestamp
                     else datetime.now(UTC),
                     name=m.message_id or None,
+                    message_id=m.message_id or None,
                 )
                 for m in resp.short_term_messages
             ]
@@ -76,6 +77,7 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
                     content=m.content,
                     timestamp=datetime.fromtimestamp(m.timestamp / 1000.0, tz=UTC) if m.timestamp else datetime.now(UTC),
                     name=m.message_id or None,
+                    message_id=m.message_id or None,
                 )
                 for m in resp.retrieved_history
             ]

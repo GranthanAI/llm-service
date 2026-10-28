@@ -341,9 +341,32 @@ class RequestPipeline:
         assert last is not None
         raise last
 
+    @staticmethod
+    def merge_histories(memory_messages: list[Message], event_messages: list[Message]) -> list[Message]:
+        """Memory's window (asynchronous: it may lack the newest turns) merged with the history that came with the request
+        (synchronous: always has them). The request's history is authoritative for the recent turns; memory contributes
+        only the messages OLDER than the first one both sources know. A message is recognised by id when both sides have
+        one, else by role + whitespace-normalised text. If the two sources share nothing there is no evidence that memory is
+        stale, so memory's window is kept as is (the long-standing contract)."""
+        if not event_messages:
+            return list(memory_messages)
+        if not memory_messages:
+            return list(event_messages)
+
+        def sig(m: Message) -> tuple[str, str]:
+            return m.role.value, " ".join(m.content.split())
+
+        event_ids = {m.message_id for m in event_messages if m.message_id}
+        event_sigs = {sig(m) for m in event_messages}
+        for index, m in enumerate(memory_messages):
+            if (m.message_id and m.message_id in event_ids) or sig(m) in event_sigs:
+                return list(memory_messages[:index]) + list(event_messages)
+        return list(memory_messages)
+
     def _ensure_conversation_history(self, ctx: PipelineContext) -> None:
-        """Use the history that came with the request when the memory service supplied none (it is
-        asynchronous and was observed degraded), so the model and tools always see the conversation."""
+        """Make sure the model and tools see the whole conversation, including the newest turns: memory's window is
+        asynchronous (and was observed degraded), the history that came with the request is not. Both are merged,
+        de-duplicated by message id, instead of falling back to the request history only when memory returned nothing."""
         bundle = ctx.context_bundle
         memory = bundle.memory if bundle else None
         inherited = [
@@ -351,6 +374,22 @@ class RequestPipeline:
             for role, content in ctx.inherited_history
             if role in ("user", "assistant") and content.strip()
         ]
+        known_ids = list(getattr(ctx, "event_history_ids", None) or [])
+        ids = known_ids + [None] * max(0, len(ctx.event_history) - len(known_ids))
+        event_messages = [
+            Message(role=Role(role), content=content, message_id=ids[i])
+            for i, (role, content) in enumerate(ctx.event_history)
+            if role in ("user", "assistant") and content.strip()
+        ]
+        if memory and memory.short_term_messages and event_messages:
+            merged = self.merge_histories(list(memory.short_term_messages), event_messages)
+            if inherited:
+                merged = inherited + merged
+            if [m.content for m in merged] != [m.content for m in memory.short_term_messages]:
+                self.logger.info("history_merged_with_event", conversation_id=ctx.conversation_id,
+                                 memory=len(memory.short_term_messages), event=len(event_messages), merged=len(merged))
+            memory.short_term_messages = merged
+            return
         if inherited and memory and memory.short_term_messages:
             # A branch: the memory service only knows this conversation's own turns. Ancestor turns
             # (up to the branch point) come first, then the branch's own.
@@ -359,11 +398,7 @@ class RequestPipeline:
             return
         if (memory and memory.short_term_messages) or not (ctx.event_history or inherited):
             return
-        messages = inherited + [
-            Message(role=Role(role), content=content)
-            for role, content in ctx.event_history
-            if role in ("user", "assistant") and content.strip()
-        ]
+        messages = inherited + event_messages
         if not messages:
             return
         bundle = bundle or ContextBundle()
