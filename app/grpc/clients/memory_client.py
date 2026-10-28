@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from grpc.aio import Channel
 
-from app.context.schemas import AncestorSummary, Fact, MemoryContext, Message, Role
+from app.context.schemas import Anchor, AncestorSummary, Fact, MemoryContext, Message, Role
 from app.grpc.clients.base import BaseGRPCClient
 from app.grpc.proto import memory_pb2, memory_pb2_grpc
 
@@ -98,6 +98,8 @@ class MemoryServiceClient(BaseGRPCClient[memory_pb2_grpc.MemoryServiceStub]):
             return MemoryContext(
                 short_term_messages=messages,
                 retrieved_history=retrieved,
+                anchors=[Anchor(kind=a.kind, text=a.text, source_message_id=a.source_message_id)
+                         for a in getattr(resp, "anchors", [])],
                 long_term_facts=facts,
                 summary=resp.medium_summary,
                 summary_version=resp.summary_version,

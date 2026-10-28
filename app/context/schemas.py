@@ -51,6 +51,15 @@ class AncestorSummary(BaseModel):
     summary_version: int = 0
 
 
+class Anchor(BaseModel):
+    """A fact of this conversation that must not be lost to summarization (decision, constraint, open item, correction or
+    identifier) and the message it came from."""
+
+    kind: str
+    text: str
+    source_message_id: str = ""
+
+
 class MemoryContext(BaseModel):
     """Memory service response bundle.
 
@@ -71,6 +80,8 @@ class MemoryContext(BaseModel):
     # Older ORIGINAL messages of THIS conversation that match the current question (exact text, oldest first), supplied
     # by the Memory Service for details a summary may have lost. Empty when nothing qualified.
     retrieved_history: list[Message] = Field(default_factory=list)
+    # The conversation's anchor ledger (open items first), rendered next to the summary and never trimmed.
+    anchors: list[Anchor] = Field(default_factory=list)
 
 
 class EntityNode(BaseModel):
