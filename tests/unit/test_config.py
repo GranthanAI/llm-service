@@ -25,10 +25,10 @@ def test_config_defaults(monkeypatch: pytest.MonkeyPatch):
 
 def test_config_nvidia_key_alias(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
-    monkeypatch.setenv("NVIDIA_KEY", "nvapi-custom-alias")
+    monkeypatch.setenv("NVIDIA_KEY", "nvapi-FAKE_TEST_KEY_NOT_REAL_000000000000")
 
     config = LLMServiceConfig()
-    assert config.nvidia_api_key.get_secret_value() == "nvapi-custom-alias"
+    assert config.nvidia_api_key.get_secret_value() == "nvapi-FAKE_TEST_KEY_NOT_REAL_000000000000"
 
 
 def test_config_invalid_log_level(monkeypatch: pytest.MonkeyPatch):

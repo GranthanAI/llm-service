@@ -80,7 +80,7 @@ async def main():
     # 4. Test Output Validation & Secret Leak Prevention (Phase 19)
     print("\nStage 4: Testing Output Validation & Secret Leak Prevention...")
     validator = OutputValidator()
-    leaked_output = "Operation complete with token nvapi-mockSECRETkey1234567890abcdef1234567890abcdef1234567890abcdef."
+    leaked_output = "Operation complete with token nvapi-FAKE_TEST_KEY_NOT_REAL_000000000000."
     is_valid = validator.validate(leaked_output)
     print(f"   Leaked Output Valid: {is_valid} (Correctly Rejected)")
     assert is_valid is False

@@ -114,7 +114,7 @@ def test_output_validator_empty_or_whitespace():
 def test_output_validator_secret_leak_prevention():
     """Verify response containing raw API key fails validation and can be sanitized."""
     validator = OutputValidator()
-    leaked_response = "Here is your key: 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 and AIzaFAKE_TEST_KEY_NOT_REAL_000000000000"
+    leaked_response = "Here is your key: nvapi-FAKE_TEST_KEY_NOT_REAL_000000000000 and AIzaFAKE_TEST_KEY_NOT_REAL_000000000000"
 
     assert validator.validate(leaked_response) is False
 

@@ -251,7 +251,7 @@ def test_output_validator_integration_passes_clean_output():
 def test_output_validator_integration_blocks_api_key_leak():
     """OutputValidator blocks responses containing leaked API keys."""
     validator = OutputValidator()
-    leaked = "Your NVIDIA key is: nvapi-fakeKEY123abc456def789ghi012jkl345mno678pqrST"
+    leaked = "Your NVIDIA key is: nvapi-FAKE_TEST_KEY_NOT_REAL_000000000000"
     assert validator.validate(leaked) is False
     cleaned = validator.sanitize_output(leaked)
     assert "[REDACTED_API_KEY]" in cleaned

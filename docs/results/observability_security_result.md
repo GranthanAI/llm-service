@@ -116,8 +116,8 @@ LIVE VERIFICATION: PHASE 18 (OBSERVABILITY) & PHASE 19 (SECURITY & CONFIG)
 Stage 1: Validating Configuration, Secrets & Feature Flags...
    Service Name:      llm-service (v2.0.0)
    Environment:       development
-   Groq API Key:      gsk_hHzW... (Protected SecretStr)
-   NVIDIA API Key:    nvapi-aB... (Protected SecretStr)
+   Groq API Key:      gsk_FAKE... (Protected SecretStr)
+   NVIDIA API Key:    nvapi-FAKE... (Protected SecretStr)
    Feature Flags:
      - Smart Mode:          True
      - Deep Research Mode:  True
