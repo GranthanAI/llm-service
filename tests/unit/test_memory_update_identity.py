@@ -86,3 +86,15 @@ def test_new_fields_are_optional_so_old_producers_and_tests_still_validate():
     old = MemoryUpdateRequestedEvent(conversation_id="c", user_id="u", user_message="q", assistant_response="a")
     assert old.user_message_id is None and old.assistant_created_at is None
     assert datetime.now(UTC) - old.timestamp < timedelta(seconds=5)
+
+
+@pytest.mark.asyncio
+async def test_a_regenerated_answer_names_the_answer_it_replaces():
+    ctx = make_ctx(uuid7_at(SENT_AT, 1), uuid7_at(SENT_AT, 2))
+    assert (await publish(ctx)).replaces_message_id is None
+    old = uuid7_at(SENT_AT, 9)
+    event = ChatMessageCreatedEvent(message_id=uuid7_at(SENT_AT, 1), response_message_id=uuid7_at(SENT_AT, 2),
+                                    conversation_id="conv-1", user_id="user-1", content="hello",
+                                    metadata={"regeneration": True, "replaces_message_id": old})
+    regenerated = PipelineContext.from_event(event, request_id="req-2")
+    assert (await publish(regenerated)).replaces_message_id == old

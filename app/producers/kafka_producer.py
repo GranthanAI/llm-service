@@ -297,6 +297,7 @@ class KafkaPublisher:
             assistant_message_id=ctx.response_message_id or None,
             user_created_at=user_created_at,
             assistant_created_at=max(now, user_created_at),
+            replaces_message_id=ctx.replaces_message_id,
         )
         await self._send(
             topic="memory.update.requested",

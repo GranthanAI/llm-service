@@ -47,6 +47,8 @@ class PipelineContext(BaseModel):
     search_query: str | None = None
     # Earlier turns from the request event, used when the memory service cannot supply history.
     event_history: list[tuple[str, str]] = Field(default_factory=list)
+    # Set when the request regenerates an earlier answer: the id of the answer being replaced (from the event metadata).
+    replaces_message_id: str | None = None
     # Message ids parallel to event_history (None where Conversation Service sent none).
     event_history_ids: list[str | None] = Field(default_factory=list)
     # Ancestor turns inherited by this branch (oldest first). Always used, ahead of the branch's own turns.
@@ -113,6 +115,7 @@ class PipelineContext(BaseModel):
             include_diagrams=bool(event.include_diagrams),
             event_history=[(h.role, h.content) for h in event.history if not h.inherited],
             event_history_ids=[h.message_id for h in event.history if not h.inherited],
+            replaces_message_id=(event.metadata or {}).get("replaces_message_id") or None,
             inherited_history=[(h.role, h.content) for h in event.history if h.inherited],
             ancestors=[a.model_dump() for a in event.ancestors],
             custom_mode=event.custom_mode,

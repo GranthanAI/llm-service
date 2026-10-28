@@ -119,6 +119,8 @@ class MemoryUpdateRequestedEvent(BaseModel):
     assistant_message_id: str | None = None
     user_created_at: datetime | None = None
     assistant_created_at: datetime | None = None
+    # Additive: set when this answer is a REGENERATION; memory-service then replaces the discarded answer with this one.
+    replaces_message_id: str | None = None
 
 
 class ChatResponseCancelledEvent(BaseModel):
