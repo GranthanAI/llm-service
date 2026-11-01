@@ -386,8 +386,13 @@ class RequestPipeline:
             if inherited:
                 merged = inherited + merged
             if [m.content for m in merged] != [m.content for m in memory.short_term_messages]:
-                self.logger.info("history_merged_with_event", conversation_id=ctx.conversation_id,
-                                 memory=len(memory.short_term_messages), event=len(event_messages), merged=len(merged))
+                self.logger.info(
+                    "history_merged_with_event",
+                    conversation_id=ctx.conversation_id,
+                    memory_count=len(memory.short_term_messages),
+                    event_history_count=len(event_messages),
+                    merged_count=len(merged),
+                )
             memory.short_term_messages = merged
             return
         if inherited and memory and memory.short_term_messages:
