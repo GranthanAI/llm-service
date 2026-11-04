@@ -25,6 +25,7 @@ from app.config.logging import (
 from app.config.settings import LLMServiceConfig, get_settings
 from app.consumers.chat_consumer import ChatConsumer
 from app.consumers.kafka_consumer import KafkaConsumerEngine
+from app.context.retrieval_query import RetrievalQueryRewriter
 from app.context.collector import ContextCollector
 from app.context.merger import ContextMerger
 from app.context_window import ContextWindowManager
@@ -178,6 +179,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         [_analysis_client(m) for m in dict.fromkeys(config.groq_order_models) if m != config.groq_model]
         if groq_key
         else []
+    )
+    # Standalone/English rewrite of document questions uses the same fast models as request analysis.
+    container.context_collector.query_rewriter = RetrievalQueryRewriter(
+        clients=[groq_client, *analysis_fallbacks],
+        timeout_s=config.retrieval_query_rewrite_timeout_s,
+        turns=config.retrieval_query_rewrite_turns,
     )
     container.request_analyzer = RequestAnalyzer(
         groq_client=groq_client,

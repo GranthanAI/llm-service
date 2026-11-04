@@ -138,6 +138,13 @@ class RetrievalContext(BaseModel):
     requested_count: int = 0
     authorized_count: int = 0
     ready_count: int = 0
+    # Additive retrieval signals. COVERAGE_UNSPECIFIED (what an older server sends) means "no signal".
+    coverage: str = "COVERAGE_UNSPECIFIED"   # COVERAGE_UNSPECIFIED | STRONG | WEAK | NONE
+    top_score: float | None = None
+    # True when `chunks` are the whole text of small attached documents (GetDocumentChunks), not a top-k selection.
+    full_text: bool = False
+    truncated: bool = False
+    total_tokens: int = 0
 
 
 class ContextBundle(BaseModel):

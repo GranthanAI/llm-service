@@ -124,6 +124,20 @@ class LLMServiceConfig(BaseSettings):
     prompt_history_as_messages: bool = False
     prompt_retrieved_history_enabled: bool = True
 
+    # ---- Document retrieval (see docs/retrieval-quality.md in retrieval-service and docs/retrieval-llm-flags.md) ----
+    retrieval_top_k: int = Field(default=8, ge=1, le=50)             # chunks requested per question (was a hard-coded 5)
+    retrieval_max_tokens: int = Field(default=4000, ge=0)            # retrieval-side token cap for those chunks
+    retrieval_query_rewrite_enabled: bool = True                     # standalone + English rewrite of the question
+    retrieval_query_rewrite_timeout_s: float = Field(default=2.0, gt=0, le=10)
+    retrieval_query_rewrite_turns: int = Field(default=3, ge=0, le=6)   # earlier user/assistant exchanges given to the rewriter
+    retrieval_previous_chunks_enabled: bool = True                   # send last turn's chunk ids as previous_chunk_ids
+    retrieval_previous_chunks_ttl_s: int = Field(default=3600, ge=1)
+    retrieval_full_text_enabled: bool = False                        # small attachments go in full (needs retrieval GetDocumentChunks)
+    retrieval_full_text_share: float = Field(default=0.25, gt=0, le=1)  # of the input budget
+    retrieval_input_budget_tokens: int = Field(default=0, ge=0)      # 0 = derive from PROMPT_TOKEN_BUDGET / CONTEXT_BUDGET_DEFAULT_TOKENS
+    retrieval_coverage_prompt_enabled: bool = True                   # render WEAK/NONE coverage + document-over-pinned-facts rule
+    log_query_text: bool = False                                     # OFF: only a hash of the query is logged
+
     # ---- Automatic compaction ----
     context_compaction_enabled: bool = True
     # Compact when the estimated input reaches this fraction of the effective input budget (or exceeds it).

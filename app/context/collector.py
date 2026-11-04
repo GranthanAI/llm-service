@@ -6,12 +6,16 @@ Implements LLD v2.0 Section 9 and HLD v2.0 Section 8 & 14.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from typing import TYPE_CHECKING
 
 import structlog
 
 from app.config.logging import get_logger
+from app.config.settings import LLMServiceConfig, get_settings
+from app.context.previous_chunks import PreviousChunkStore
+from app.context.retrieval_query import RetrievalQuery, RetrievalQueryRewriter
 from app.context.merger import ContextMerger
 from app.context.schemas import (
     ContextBundle,
@@ -47,7 +51,14 @@ class ContextCollector:
         retrieval_client: RetrievalServiceClient,
         merger: ContextMerger | None = None,
         logger: structlog.stdlib.BoundLogger | None = None,
+        query_rewriter: RetrievalQueryRewriter | None = None,
+        previous_chunks: PreviousChunkStore | None = None,
+        config: LLMServiceConfig | None = None,
     ):
+        self.config = config or get_settings()
+        # None = no rewrite (the raw message is the query). Wired in app.main once the fast models exist.
+        self.query_rewriter = query_rewriter
+        self.previous_chunks = previous_chunks or PreviousChunkStore(ttl_s=self.config.retrieval_previous_chunks_ttl_s)
         self.memory_client: MemoryServiceClient = memory_client
         self.graph_client: GraphServiceClient = graph_client
         self.retrieval_client: RetrievalServiceClient = retrieval_client
@@ -153,35 +164,91 @@ class ContextCollector:
         finally:
             CONTEXT_FETCH_DURATION.labels(source="graph").observe(time.perf_counter() - start_time)
 
+    def _input_budget_tokens(self) -> int:
+        cfg = self.config
+        if cfg.retrieval_input_budget_tokens:
+            return cfg.retrieval_input_budget_tokens
+        return min(t for t in (cfg.prompt_token_budget, cfg.context_budget_default_tokens) if t > 0)
+
+    async def _try_full_text(self, ctx: PipelineContext) -> RetrievalContext | None:
+        """Whole text of small attached documents, or None (too big, not supported by the server, any error)."""
+        budget = int(self._input_budget_tokens() * self.config.retrieval_full_text_share)
+        if budget <= 0:
+            return None
+        try:
+            res = await self.retrieval_client.get_document_chunks(
+                user_id=ctx.user_id, file_ids=ctx.file_ids, max_tokens=budget,
+                trace_id=ctx.trace_id, conversation_id=ctx.conversation_id,
+            )
+        except Exception as exc:  # UNIMPLEMENTED (older server), timeout, anything: normal retrieval instead
+            self.logger.info("retrieval_full_text_unavailable", error=type(exc).__name__, request_id=ctx.request_id)
+            return None
+        if res.status != "OK" or res.truncated or not res.chunks:
+            return None
+        return res
+
     async def _fetch_retrieval(self, ctx: PipelineContext) -> RetrievalContext | None:
         """Fetch retrieval chunks via gRPC.
 
         Retrieval only searches explicitly attached files (scope FILES); ALL /
         KNOWLEDGE_BASE are unsupported server-side. With no attached files there
         is nothing to search, so skip the RPC (and its unsupported-scope metric).
+
+        Small attachments go in full (flag); otherwise a standalone rewrite of the question is searched and the
+        previous turn's chunk ids are offered again (flags). Every step falls back to the plain behaviour.
         """
         if not ctx.file_ids:
             return None
+        cfg = self.config
         start_time = time.perf_counter()
+        stages: dict[str, float] = {}
         try:
             res = None
-            for attempt in (1, 2):
-                res = await self.retrieval_client.get_relevant_chunks(
-                    user_id=ctx.user_id,
-                    conversation_id=ctx.conversation_id,
-                    query=ctx.user_message,
-                    file_ids=ctx.file_ids,
-                    trace_id=ctx.trace_id,
-                )
-                if res.status not in _TRANSIENT or attempt == 2:
-                    break
-                self.logger.warning(
-                    "Retrieval returned a transient status; retrying once",
-                    status=res.status,
-                    conversation_id=ctx.conversation_id,
-                    request_id=ctx.request_id,
-                )
-                await asyncio.sleep(0.2)
+            rq = RetrievalQuery(query=ctx.user_message, method="disabled")
+            previous: list[str] = []
+
+            if cfg.retrieval_full_text_enabled:
+                t = time.perf_counter()
+                res = await self._try_full_text(ctx)
+                stages["full_text_ms"] = round((time.perf_counter() - t) * 1000, 1)
+
+            if res is None:
+                if cfg.retrieval_query_rewrite_enabled and self.query_rewriter is not None:
+                    t = time.perf_counter()
+                    try:
+                        rq = await self.query_rewriter.build(ctx.user_message, list(ctx.event_history))
+                    except Exception as exc:  # the rewriter should not raise; if it does, search the raw message
+                        self.logger.warning("retrieval_rewrite_error", error=type(exc).__name__)
+                    stages["rewrite_ms"] = round((time.perf_counter() - t) * 1000, 1)
+                if cfg.retrieval_previous_chunks_enabled:
+                    previous = self.previous_chunks.get(ctx.conversation_id)
+
+                t = time.perf_counter()
+                for attempt in (1, 2):
+                    res = await self.retrieval_client.get_relevant_chunks(
+                        user_id=ctx.user_id,
+                        conversation_id=ctx.conversation_id,
+                        query=rq.query,
+                        file_ids=ctx.file_ids,
+                        trace_id=ctx.trace_id,
+                        top_k=cfg.retrieval_top_k,
+                        max_tokens=cfg.retrieval_max_tokens,
+                        dense_query=rq.dense_query,
+                        previous_chunk_ids=previous,
+                    )
+                    if res.status not in _TRANSIENT or attempt == 2:
+                        break
+                    self.logger.warning(
+                        "Retrieval returned a transient status; retrying once",
+                        status=res.status,
+                        conversation_id=ctx.conversation_id,
+                        request_id=ctx.request_id,
+                    )
+                    await asyncio.sleep(0.2)
+                stages["search_ms"] = round((time.perf_counter() - t) * 1000, 1)
+
+            if cfg.retrieval_previous_chunks_enabled and res.chunks and not res.full_text:
+                self.previous_chunks.record(ctx.conversation_id, [c.chunk_id for c in res.chunks])
             self.logger.info(
                 "retrieval_result",
                 conversation_id=ctx.conversation_id,
@@ -195,8 +262,35 @@ class ContextCollector:
                 chunks=len(res.chunks),
                 sources=sorted({c.file_id for c in res.chunks}),
             )
+            self._log_feedback(ctx, rq, res, previous, stages)
             return res
         finally:
             CONTEXT_FETCH_DURATION.labels(source="retrieval").observe(
                 time.perf_counter() - start_time
             )
+
+    def _log_feedback(self, ctx, rq: RetrievalQuery, res: RetrievalContext, previous: list[str], stages: dict) -> None:
+        """One structured line per retrieval (see docs/retrieval-feedback.md). Never document content; query text only
+        behind LOG_QUERY_TEXT."""
+        fields = dict(
+            trace_id=ctx.trace_id,
+            conversation_id=ctx.conversation_id,
+            message_id=ctx.message_id,
+            query_hash=hashlib.sha256(str(ctx.user_message).encode("utf-8")).hexdigest()[:16],
+            rewrite_method=rq.method,
+            rewrite_used=bool(rq.rewritten),
+            dense_query_sent=bool(rq.dense_query),
+            previous_chunks_sent=len(previous),
+            full_text=res.full_text,
+            status=res.status,
+            coverage=res.coverage,
+            top_score=res.top_score,
+            chunk_ids=[c.chunk_id for c in res.chunks],
+            scores=[c.score for c in res.chunks],
+            latency_ms=stages,
+        )
+        if self.config.log_query_text:
+            fields["query_text"] = str(ctx.user_message)
+            fields["retrieval_query_text"] = rq.query
+            fields["dense_query_text"] = rq.dense_query
+        self.logger.info("retrieval_feedback", **fields)
