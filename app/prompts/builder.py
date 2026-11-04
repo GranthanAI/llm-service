@@ -45,6 +45,20 @@ HISTORY_HEADER = (
 )
 
 
+_WEAK_COVERAGE_NOTE = {
+    "WEAK": (
+        "Retrieval coverage: WEAK. The passages above were found but none clearly answers the question. If they do not "
+        "answer it, say that the attached documents do not cover it instead of guessing. For questions about the documents, "
+        "these passages override \"Pinned Facts\" from the conversation."
+    ),
+    "NONE": (
+        "Retrieval coverage: NONE. Nothing relevant to the question was found in the attached documents. Say that the "
+        "documents do not cover it; do not guess or answer from earlier assistant statements. For questions about the "
+        "documents, retrieved passages override \"Pinned Facts\" from the conversation."
+    ),
+}
+
+
 def _clean_block(value: object, limit: int) -> str:
     """Multi-line text from a stored (user-derived) source: control characters removed, length bounded."""
     text = "".join(ch if (ch.isprintable() or ch in "\n\t") else " " for ch in str(value or "")).strip()
@@ -231,7 +245,7 @@ class PromptBuilder:
                 )
 
         # 4. Retrieval Context (Priority 5)
-        if bundle and bundle.retrieval and bundle.retrieval.chunks:
+        if bundle and bundle.retrieval and (bundle.retrieval.chunks or self._weak_coverage(bundle.retrieval)):
             retrieval_content = self._format_retrieval(bundle.retrieval)
             if retrieval_content:
                 sections.append(
@@ -461,7 +475,14 @@ class PromptBuilder:
                 )
             source_info = f" (Source: {name}{', ' + location if location else ''})" if name else ""
             lines.append(f"[{idx}]{source_info} {chunk.content.strip()}")
+        if self._weak_coverage(retrieval):
+            lines.append(_WEAK_COVERAGE_NOTE[retrieval.coverage])
         return "\n".join(lines)
+
+    @staticmethod
+    def _weak_coverage(retrieval: RetrievalContext) -> bool:
+        """WEAK / NONE from the retrieval service (flagged). UNSPECIFIED and STRONG add nothing."""
+        return get_settings().retrieval_coverage_prompt_enabled and retrieval.coverage in _WEAK_COVERAGE_NOTE
 
     def _format_tool_results(self, tool_outputs: list[ToolResult]) -> str:
         """Formats normalized tool outputs as clearly delimited, UNTRUSTED evidence.
