@@ -157,6 +157,12 @@ class ModelRegistry:
                 members = [first] + [m for m in members if m.id != first.id]
         return [m for m in members if self._usable(m, has_credentials)]
 
+    def catalog_id(self, provider: str, provider_model: str) -> str | None:
+        """The billing catalog id for a provider's model string (None for a legacy-only model with no catalog id)."""
+        if not hasattr(self, "_by_provider_model"):
+            self._by_provider_model = {(m.provider, m.provider_model): m.id for m in self.models.values()}
+        return self._by_provider_model.get((provider, provider_model))
+
     def context_window_of(self, model_id: str) -> int | None:
         spec = self.models.get(model_id)
         return spec.context_window if spec else None

@@ -85,6 +85,8 @@ class PipelineContext(BaseModel):
     safety_check_failed: bool = False
     # What billing granted this request (None = legacy routing).
     billing: Any = None
+    # The request's UsageCollector (app/usage): one CallUsage per model call.
+    usage_collector: Any = None
 
     @classmethod
     def from_event(

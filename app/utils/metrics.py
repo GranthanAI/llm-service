@@ -164,3 +164,10 @@ MANIM_JOBS_TOTAL = Counter("llm_manim_jobs_total", "Manim jobs by final state", 
 MANIM_RENDER_SECONDS = Histogram(
     "llm_manim_render_seconds", "Manim render duration", [], buckets=(2, 5, 10, 20, 40, 60, 90, 180)
 )
+
+# A call whose provider reported no token usage, so billing's figures are our own estimate (P5c).
+USAGE_ESTIMATED_TOTAL = Counter(
+    "llm_usage_estimated_total",
+    "Model calls whose token usage was estimated because the provider reported none",
+    ["provider", "model"],
+)

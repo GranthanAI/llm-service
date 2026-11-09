@@ -18,6 +18,8 @@ from app.exceptions.provider import (
 )
 from app.providers.base import TRUNCATION_NOTICE, BaseProviderAdapter
 from app.providers.models import GenerationResponse
+from app.providers.openai import openai_usage_numbers
+from app.providers.usage_hook import report_usage
 from app.utils.metrics import TOKENS_TOTAL
 from app.utils.tracing import get_tracer
 
@@ -88,6 +90,9 @@ class NVIDIAAdapter(BaseProviderAdapter):
                 prompt_tokens = response.usage.prompt_tokens if response.usage else 0
                 completion_tokens = response.usage.completion_tokens if response.usage else 0
                 total_tokens = response.usage.total_tokens if response.usage else 0
+                in_t, out_t, cached = openai_usage_numbers(response.usage)
+                report_usage(params, provider="nvidia", model=model, input_tokens=in_t, output_tokens=out_t,
+                             cached_input_tokens=cached, messages=messages, output_text=content)
 
                 try:
                     TOKENS_TOTAL.labels(provider="nvidia", token_type="prompt").inc(prompt_tokens)
@@ -133,15 +138,29 @@ class NVIDIAAdapter(BaseProviderAdapter):
                     top_p=top_p,
                     max_tokens=max_tokens,
                     stream=True,
+                    stream_options={"include_usage": True},
                 )
                 truncated = False
-                async for chunk in stream_resp:
-                    if chunk.choices and chunk.choices[0].delta:
-                        content_piece = chunk.choices[0].delta.content
-                        if content_piece:
-                            yield content_piece
-                    if chunk.choices and chunk.choices[0].finish_reason == "length":
-                        truncated = True
+                usage = None
+                parts: list[str] = []
+                try:
+                    async for chunk in stream_resp:
+                        usage = getattr(chunk, "usage", None) or usage          # final chunk, no choices
+                        if chunk.choices and chunk.choices[0].delta:
+                            content_piece = chunk.choices[0].delta.content
+                            if content_piece:
+                                parts.append(content_piece)
+                                yield content_piece
+                        if chunk.choices and chunk.choices[0].finish_reason == "length":
+                            truncated = True
+                except Exception:
+                    if parts:
+                        report_usage(params, provider="nvidia", model=model, input_tokens=None, output_tokens=None,
+                                     messages=messages, output_text="".join(parts))
+                    raise
+                in_t, out_t, cached = openai_usage_numbers(usage)
+                report_usage(params, provider="nvidia", model=model, input_tokens=in_t, output_tokens=out_t,
+                             cached_input_tokens=cached, messages=messages, output_text="".join(parts))
                 if truncated:
                     self.logger.warning("NVIDIA answer hit the output token limit", max_tokens=max_tokens)
                     yield TRUNCATION_NOTICE

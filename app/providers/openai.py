@@ -86,7 +86,7 @@ class OpenAIAdapter(BaseProviderAdapter):
             content = (response.choices[0].message.content or "") if response.choices else ""
             prompt, completion, cached = openai_usage_numbers(getattr(response, "usage", None))
             report_usage(params, provider="openai", model=kwargs["model"], input_tokens=prompt,
-                         output_tokens=completion, cached_input_tokens=cached)
+                         output_tokens=completion, cached_input_tokens=cached, messages=messages, output_text=content)
             self._count(prompt or 0, completion or 0)
             return GenerationResponse(
                 content=content, provider="openai", model=kwargs["model"], prompt_tokens=prompt or 0,
@@ -107,6 +107,7 @@ class OpenAIAdapter(BaseProviderAdapter):
                 prompt = completion = None
                 cached = 0
                 truncated = False
+                parts: list[str] = []
                 try:
                     stream_resp = await self.client.chat.completions.create(
                         stream=True, stream_options={"include_usage": True}, **kwargs
@@ -119,17 +120,22 @@ class OpenAIAdapter(BaseProviderAdapter):
                             piece = choice.delta.content if choice.delta else None
                             if piece:
                                 emitted = True
+                                parts.append(piece)
                                 yield piece
                             if choice.finish_reason == "length":
                                 truncated = True
                     report_usage(params, provider="openai", model=model, input_tokens=prompt,
-                                 output_tokens=completion, cached_input_tokens=cached)
+                                 output_tokens=completion, cached_input_tokens=cached, messages=messages,
+                                 output_text="".join(parts))
                     self._count(prompt or 0, completion or 0)
                     if truncated:
                         self.logger.warning("OpenAI answer hit the output token limit", max_tokens=kwargs["max_completion_tokens"])
                         yield TRUNCATION_NOTICE
                     return
                 except Exception as e:
+                    if parts:   # died midway: tokens were consumed; the provider's figures are unknown
+                        report_usage(params, provider="openai", model=model, input_tokens=None, output_tokens=None,
+                                     messages=messages, output_text="".join(parts))
                     wait = rate_limit_wait_s(e)
                     if wait is not None and not emitted and wait <= MAX_RATE_LIMIT_WAIT_S and not rate_limited:
                         rate_limited = True

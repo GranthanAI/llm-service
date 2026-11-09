@@ -20,7 +20,7 @@ from app.models.response import (
 )
 from app.producers.kafka_producer import KafkaPublisher
 from app.utils.cancellation import CancellationToken
-from app.utils.metrics import STREAMING_CHUNKS_TOTAL, TOKENS_TOTAL, TTFT
+from app.utils.metrics import STREAMING_CHUNKS_TOTAL, TTFT
 from app.utils.tracing import get_tracer
 
 logger = get_logger("streaming_engine")
@@ -194,22 +194,15 @@ class StreamingEngine:
             full_response = "".join(full_content)
             ctx.completed_at = datetime.now(UTC)
 
-            # Set usage completion tokens if not populated
-            if ctx.usage is None:
+            # Token usage is what the PROVIDERS reported for the answer call(s) (app/usage). Characters are not
+            # tokens: when no call reported anything the figures stay 0 rather than being invented here.
+            collector = getattr(ctx, "usage_collector", None)
+            if collector is not None:
+                prompt_t, completion_t = collector.totals("answer")
                 ctx.usage = UsageMetrics(
-                    completion_tokens=len(full_content),
-                    total_tokens=len(full_content),
-                )
-            elif isinstance(ctx.usage, UsageMetrics) and ctx.usage.completion_tokens == 0:
-                ctx.usage.completion_tokens = len(full_content)
-                ctx.usage.total_tokens = ctx.usage.prompt_tokens + ctx.usage.completion_tokens
-
-            try:
-                TOKENS_TOTAL.labels(provider=provider, token_type="completion").inc(
-                    len(full_content)
-                )
-            except Exception:
-                pass
+                    prompt_tokens=prompt_t, completion_tokens=completion_t, total_tokens=prompt_t + completion_t)
+            elif ctx.usage is None:
+                ctx.usage = UsageMetrics()
 
             # Publish final chat.response.generated event
             await self.publisher.publish_response(ctx, full_response)

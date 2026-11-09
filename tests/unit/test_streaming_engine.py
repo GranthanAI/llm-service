@@ -206,8 +206,23 @@ async def test_streaming_engine_final_response_and_memory_events():
     assert full_resp == "Neural networks learn representations."
     mock_publisher.publish_response.assert_awaited_once_with(ctx, full_resp)
     mock_publisher.publish_memory_update.assert_awaited_once_with(ctx, full_resp)
+    # No provider reported usage for this fake stream: the figures stay 0. Characters are never counted as tokens.
     assert ctx.usage is not None
-    assert ctx.usage.completion_tokens == len(tokens)
+    assert ctx.usage.completion_tokens == 0 and ctx.usage.total_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_streaming_engine_usage_is_what_the_providers_reported_for_the_answer():
+    from app.usage.collector import UsageCollector
+
+    engine = StreamingEngine(publisher=MagicMock(spec=KafkaPublisher, publish_chunk=AsyncMock(),
+                                                 publish_response=AsyncMock(), publish_memory_update=AsyncMock()))
+    ctx = create_test_context()
+    collector = ctx.usage_collector = UsageCollector()
+    collector.record_provider_usage(provider="groq", model="m", input_tokens=900, output_tokens=40, purpose="request_analysis")
+    collector.record_provider_usage(provider="groq", model="m", input_tokens=5000, output_tokens=321, purpose="answer")
+    await engine.stream(token_generator(["a", "b"]), ctx)
+    assert (ctx.usage.prompt_tokens, ctx.usage.completion_tokens, ctx.usage.total_tokens) == (5000, 321, 5321)
 
 
 @pytest.mark.asyncio

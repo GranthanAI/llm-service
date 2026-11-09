@@ -115,7 +115,7 @@ class AnthropicAdapter(BaseProviderAdapter):
             content = "".join(getattr(b, "text", "") for b in response.content if getattr(b, "type", "") == "text")
             input_tokens, output_tokens, cached = _usage_numbers(getattr(response, "usage", None))
             report_usage(params, provider="anthropic", model=kwargs["model"], input_tokens=input_tokens,
-                         output_tokens=output_tokens, cached_input_tokens=cached)
+                         output_tokens=output_tokens, cached_input_tokens=cached, messages=messages, output_text=content)
             self._count(input_tokens or 0, output_tokens or 0)
             return GenerationResponse(
                 content=content, provider="anthropic", model=kwargs["model"], prompt_tokens=input_tokens or 0,
@@ -137,6 +137,7 @@ class AnthropicAdapter(BaseProviderAdapter):
                 output_tokens: int | None = None
                 cached = 0
                 truncated = False
+                parts: list[str] = []
                 try:
                     stream_resp = await self.client.messages.create(stream=True, **kwargs)
                     async for event in stream_resp:
@@ -147,6 +148,7 @@ class AnthropicAdapter(BaseProviderAdapter):
                             text = getattr(event.delta, "text", None)
                             if text and getattr(event.delta, "type", "") == "text_delta":
                                 emitted = True
+                                parts.append(text)
                                 yield text
                         elif etype == "message_delta":
                             # the final message_delta carries the cumulative output tokens (and may carry the rest)
@@ -156,7 +158,8 @@ class AnthropicAdapter(BaseProviderAdapter):
                             if getattr(event.delta, "stop_reason", None) == "max_tokens":
                                 truncated = True
                     report_usage(params, provider="anthropic", model=model, input_tokens=input_tokens,
-                                 output_tokens=output_tokens, cached_input_tokens=cached)
+                                 output_tokens=output_tokens, cached_input_tokens=cached, messages=messages,
+                                 output_text="".join(parts))
                     self._count(input_tokens or 0, output_tokens or 0)
                     if truncated:
                         self.logger.warning("Anthropic answer hit the output token limit", max_tokens=kwargs["max_tokens"])
@@ -164,9 +167,10 @@ class AnthropicAdapter(BaseProviderAdapter):
                     return
                 except Exception as e:
                     # An attempt that reached the provider may have used tokens even when it failed midway.
-                    if input_tokens is not None or output_tokens is not None:
+                    if input_tokens is not None or output_tokens is not None or parts:
                         report_usage(params, provider="anthropic", model=model, input_tokens=input_tokens,
-                                     output_tokens=output_tokens, cached_input_tokens=cached)
+                                     output_tokens=output_tokens, cached_input_tokens=cached, messages=messages,
+                                     output_text="".join(parts))
                     wait = rate_limit_wait_s(e)
                     if wait is not None and not emitted and wait <= MAX_RATE_LIMIT_WAIT_S and not rate_limited:
                         rate_limited = True

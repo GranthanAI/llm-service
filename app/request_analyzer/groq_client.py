@@ -10,6 +10,7 @@ import structlog
 from groq import AsyncGroq
 
 from app.config.logging import get_logger
+from app.providers.usage_hook import report_usage
 from app.exceptions.provider import (
     ProviderError,
     ProviderRateLimitError,
@@ -56,6 +57,11 @@ class GroqAnalysisClient:
                 timeout=timeout_sec,
             )
 
+            usage = getattr(response, "usage", None)
+            report_usage(
+                None, provider="groq", model=self.model,
+                input_tokens=getattr(usage, "prompt_tokens", None), output_tokens=getattr(usage, "completion_tokens", None),
+                messages=messages, output_text=response.choices[0].message.content or "")
             content = response.choices[0].message.content
             if not content:
                 raise ProviderError("Groq returned empty response content", provider="groq")

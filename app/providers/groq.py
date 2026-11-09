@@ -21,6 +21,7 @@ from app.exceptions.provider import (
 )
 from app.providers.base import TRUNCATION_NOTICE, BaseProviderAdapter
 from app.providers.models import GenerationResponse
+from app.providers.usage_hook import report_usage
 from app.utils import metrics
 from app.utils.metrics import TOKENS_TOTAL
 from app.utils.tracing import get_tracer
@@ -109,6 +110,12 @@ def output_budget(requested: int, prompt_tokens: int, tpm_limit: int) -> int:
     return max(MIN_OUTPUT_TOKENS, min(want, tpm_limit - prompt_tokens - 200))
 
 
+def _groq_cached(usage: Any) -> int:
+    """Cached prompt tokens when Groq reports them (prompt_tokens_details.cached_tokens), else 0."""
+    details = getattr(usage, "prompt_tokens_details", None) if usage is not None else None
+    return int(getattr(details, "cached_tokens", 0) or 0) if details is not None else 0
+
+
 def _is_spurious_tool_call(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "tool choice is none" in msg or "model called a tool" in msg
@@ -189,6 +196,11 @@ class GroqAdapter(BaseProviderAdapter):
                 prompt_tokens = response.usage.prompt_tokens if response.usage else 0
                 completion_tokens = response.usage.completion_tokens if response.usage else 0
                 total_tokens = response.usage.total_tokens if response.usage else 0
+                report_usage(
+                    params, provider="groq", model=model,
+                    input_tokens=response.usage.prompt_tokens if response.usage else None,
+                    output_tokens=response.usage.completion_tokens if response.usage else None,
+                    cached_input_tokens=_groq_cached(response.usage), messages=messages, output_text=content)
 
                 try:
                     TOKENS_TOTAL.labels(provider="groq", token_type="prompt").inc(prompt_tokens)
@@ -234,6 +246,7 @@ class GroqAdapter(BaseProviderAdapter):
             rate_limited = False
             attempt = 0
             current = messages
+            attempt_text: list[str] = []
             while True:
                 try:
                     stream_resp = await self.client.chat.completions.create(
@@ -245,19 +258,32 @@ class GroqAdapter(BaseProviderAdapter):
                         **extra,
                     )
                     truncated = False
+                    usage = None
+                    attempt_text.clear()
                     async for chunk in stream_resp:
+                        # usage arrives on the final chunk: `usage`, or `x_groq.usage`
+                        usage = getattr(chunk, "usage", None) or getattr(getattr(chunk, "x_groq", None), "usage", None) or usage
                         if chunk.choices and chunk.choices[0].delta:
                             content_piece = chunk.choices[0].delta.content
                             if content_piece:
                                 emitted = True
+                                attempt_text.append(content_piece)
                                 yield content_piece
                         if chunk.choices and chunk.choices[0].finish_reason == "length":
                             truncated = True
+                    report_usage(
+                        params, provider="groq", model=model,
+                        input_tokens=getattr(usage, "prompt_tokens", None), output_tokens=getattr(usage, "completion_tokens", None),
+                        cached_input_tokens=_groq_cached(usage), messages=current, output_text="".join(attempt_text))
                     if truncated:
                         self.logger.warning("Groq answer hit the output token limit", max_tokens=max_tokens)
                         yield TRUNCATION_NOTICE
                     return
                 except Exception as e:
+                    if attempt_text:
+                        # an answer that died midway still consumed tokens the provider will bill: estimate them
+                        report_usage(params, provider="groq", model=model, input_tokens=None, output_tokens=None,
+                                     messages=current, output_text="".join(attempt_text))
                     wait = rate_limit_wait_s(e)
                     if wait is not None and not emitted and wait <= MAX_RATE_LIMIT_WAIT_S and not rate_limited:
                         rate_limited = True

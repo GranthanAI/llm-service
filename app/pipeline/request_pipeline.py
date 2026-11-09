@@ -35,6 +35,7 @@ from app.tools.selection import build_selected_calls, drop_calls_covered_by_mode
 from app.visualization.guidance import visualization_guidance
 from app.workflow_engine.modes import apply_requested_mode, custom_mode_base, resolve_requested_mode
 from app.security.pii import PIIDetector
+from app.usage.collector import UsageCollector, current_collector, use_collector, usage_purpose
 from app.security.sanitizer import InputSanitizer
 from app.services.streaming_service import StreamingEngine
 from app.utils.error_handler import ErrorHandler
@@ -93,7 +94,18 @@ class RequestPipeline:
             fallback_adapters=getattr(request_analyzer, "fallback_adapters", None),
         )
 
+    def _catalog_model(self, provider: str, provider_model: str) -> str:
+        """Billing's catalog id for a model call (the provider's own model string for a legacy-only model)."""
+        registry = getattr(self.group_chains, "registry", None)
+        provider = {"gemini": "google"}.get(provider, provider)
+        return (registry.catalog_id(provider, provider_model) if registry is not None else None) or provider_model
+
     async def run(self, event: ChatMessageCreatedEvent) -> None:
+        """One request = one usage collector (a ContextVar, so shared adapters report into the right request)."""
+        with use_collector(UsageCollector(model_resolver=self._catalog_model)):
+            await self._run(event)
+
+    async def _run(self, event: ChatMessageCreatedEvent) -> None:
         """
         Executes the full canonical pipeline for one chat.message.created event.
         Never raises — on failure, publishes an error-variant chat.response.generated
@@ -101,6 +113,7 @@ class RequestPipeline:
         """
         request_id = generate_request_id()
         ctx = PipelineContext.from_event(event, request_id=request_id)
+        ctx.usage_collector = current_collector()
         t_start = time.perf_counter()
         # Timing fields (ms). Never contains message content.
         timing: dict[str, float | bool | str | None] = {
@@ -173,7 +186,8 @@ class RequestPipeline:
             if fast:
                 ctx.context_bundle = ContextMerger().merge()
             else:
-                ctx.context_bundle = await self.context_collector.collect(ctx)
+                with usage_purpose("query_rewrite"):      # the only model call in context collection
+                    ctx.context_bundle = await self.context_collector.collect(ctx)
             ctx.context_collected_at = datetime.now(UTC)
             self._enforce_document_context(ctx)
             self._ensure_conversation_history(ctx)
@@ -185,7 +199,8 @@ class RequestPipeline:
                 plan.groq_model_used = "fast_path"
                 plan.analysis_confidence = 1.0
             else:
-                plan = await self.request_analyzer.analyze(ctx)
+                with usage_purpose("request_analysis"):
+                    plan = await self.request_analyzer.analyze(ctx)
             plan = apply_requested_mode(plan, requested_mode, self.config)
             # Web search mode already runs the search: do not run it again for an explicit tool pick.
             selected_calls = drop_calls_covered_by_mode(selected_calls, plan.mode)
@@ -204,7 +219,8 @@ class RequestPipeline:
                 or any(c.tool_name == "web_search" for c in selected_calls)
             ):
                 history = ctx.context_bundle.memory.short_term_messages if ctx.context_bundle and ctx.context_bundle.memory else []
-                ctx.search_query = await self.query_rewriter.rewrite(ctx.user_message, list(history))
+                with usage_purpose("query_rewrite"):
+                    ctx.search_query = await self.query_rewriter.rewrite(ctx.user_message, list(history))
                 for c in selected_calls:
                     if c.tool_name == "web_search" and "query" in c.params:
                         c.params["query"] = ctx.search_query
@@ -218,7 +234,8 @@ class RequestPipeline:
                 # planner also asked for so the workflow does not run it a second time.
                 chosen = {c.tool_name for c in selected_calls}
                 plan.tools = [t_ for t_ in plan.tools if t_.tool_name not in chosen]
-            result = await self.workflow_engine.execute(plan, ctx)
+            with usage_purpose("research" if getattr(plan.mode, "value", plan.mode) == "deep_research" else "workflow"):
+                result = await self.workflow_engine.execute(plan, ctx)
             if selected_calls:
                 forced = await self.tool_dispatcher.dispatch(
                     selected_calls,
@@ -269,7 +286,8 @@ class RequestPipeline:
 
             # 8. Streaming Engine: publishes chat.response.chunk incrementally, then
             # chat.response.generated + memory.update.requested on completion.
-            await self.streaming_engine.stream(token_iter, ctx)
+            with usage_purpose("answer"):
+                await self.streaming_engine.stream(token_iter, ctx)
             _lap("generation_ms", t)
             if ctx.first_chunk_at and ctx.inference_started_at:
                 timing["ttft_ms"] = round(

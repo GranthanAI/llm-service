@@ -19,10 +19,22 @@ from app.exceptions.provider import (
 )
 from app.providers.base import BaseProviderAdapter
 from app.providers.models import GenerationResponse
+from app.providers.usage_hook import report_usage
 from app.utils.metrics import TOKENS_TOTAL
 from app.utils.tracing import get_tracer
 
 logger = get_logger("gemini_adapter")
+
+
+def gemini_usage_numbers(meta: Any) -> tuple[int | None, int | None, int]:
+    """(input, output, cached) from usage_metadata. Gemini bills its thinking tokens as output, and they are NOT in
+    candidates_token_count, so they are added to the output."""
+    if meta is None or getattr(meta, "prompt_token_count", None) is None:
+        return None, None, 0
+    out = getattr(meta, "candidates_token_count", None)
+    thoughts = getattr(meta, "thoughts_token_count", None) or 0
+    return (int(meta.prompt_token_count), None if out is None else int(out) + int(thoughts),
+            int(getattr(meta, "cached_content_token_count", 0) or 0))
 
 
 class GeminiAdapter(BaseProviderAdapter):
@@ -116,6 +128,9 @@ class GeminiAdapter(BaseProviderAdapter):
                     else len(content) // 4
                 )
                 total_tokens = prompt_tokens + completion_tokens
+                in_t, out_t, cached = gemini_usage_numbers(response.usage_metadata)
+                report_usage(params, provider="gemini", model=model, input_tokens=in_t, output_tokens=out_t,
+                             cached_input_tokens=cached, messages=messages, output_text=content)
 
                 try:
                     TOKENS_TOTAL.labels(provider="gemini", token_type="prompt").inc(prompt_tokens)
@@ -159,9 +174,22 @@ class GeminiAdapter(BaseProviderAdapter):
                     contents=contents,  # type: ignore[arg-type]
                     config=config,
                 )
-                async for chunk in stream_resp:
-                    if chunk.text:
-                        yield chunk.text
+                meta = None
+                parts: list[str] = []
+                try:
+                    async for chunk in stream_resp:
+                        meta = getattr(chunk, "usage_metadata", None) or meta     # the last chunk carries the totals
+                        if chunk.text:
+                            parts.append(chunk.text)
+                            yield chunk.text
+                except Exception:
+                    if parts:   # died midway: tokens were consumed; the provider's figures are unknown
+                        report_usage(params, provider="gemini", model=model, input_tokens=None, output_tokens=None,
+                                     messages=messages, output_text="".join(parts))
+                    raise
+                in_t, out_t, cached = gemini_usage_numbers(meta)
+                report_usage(params, provider="gemini", model=model, input_tokens=in_t, output_tokens=out_t,
+                             cached_input_tokens=cached, messages=messages, output_text="".join(parts))
             except Exception as e:
                 self._handle_exception(e)
 

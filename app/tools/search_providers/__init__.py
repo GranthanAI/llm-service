@@ -1,5 +1,8 @@
 """
 Search Providers Public Exports.
+
+BILLING: every provider here is free today, so web search is not metered. A paid provider must emit usage.metered
+(billing integration plan 4.4.5) before it is added to this registry. (`tavily_api_key` in settings is unused.)
 """
 
 from app.tools.search_providers.arxiv import ArxivProvider
