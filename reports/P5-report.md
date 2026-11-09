@@ -20,7 +20,7 @@ Range: `626020e..HEAD`.
 
 No test makes a live provider call (fake SDK streams, a fake gRPC billing server, a fake Kafka producer).
 
-## Exit check: see "P5x" below (the original "NOT DONE" note is kept for history)
+## Exit check: DONE (see "P5x" below; the earlier "NOT DONE" note is kept for history)
 Billing was not running (nothing listens on 8090; the process on 50051 is **memory-service**, whose gRPC default clashes with billing's), the llm-service on 8003 is an
 older process, and the check makes **real Groq / Smart-model calls**, which I did not do without your say-so. To run it:
 1. Kafka must advertise `127.0.0.1:9092`. Billing: `PAYMENT_SIMULATION=true`, API + worker, `KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092`, gRPC on a free port
@@ -106,12 +106,29 @@ calls:
   {"provider":"groq","model":"openai/gpt-oss-120b","purpose":"answer","input_tokens":2412,"cached_input_tokens":0,"output_tokens":102,"usage_estimated":false}
 PASS (calls include request_analysis + answer, provider-reported)
 ```
-**Billing side: NOT DONE.** `SELECT ... FROM billing.usage_events WHERE source_id = 'e54ceb41-...'` returns 0 rows (note: the table is `billing.usage_events`, schema-qualified).
-Cause, from billing's own log (`billing-service/.dev/logs/worker.err.log`): the shared billing **worker crashed** when it consumed the event:
-`aiokafka.errors.UnsupportedCodecError: Libraries for lz4 compression codec not found`. llm-service's producers use `compression_type="lz4"`; billing's environment has no `lz4`.
-The worker (pid 23212) is no longer running (port 9100 is not listening); the API (8090/50061) is still up. The unconsumed `chat.response.generated` message will crash a restarted
-worker the same way. I did not touch billing. Decision for you: add `lz4` to billing's dependencies (any lz4 producer breaks billing otherwise), or switch llm-service's producer to
-`gzip` (billing's own producer uses gzip). Once billing's worker can read it, re-run the SQL above; the row should show non-zero `cost_micro_inr`.
+**Billing side: DONE** (after billing's B2 fix, commit `50fb61c` in billing-service).
+The first SQL run returned 0 rows because the shared billing worker had crashed on the event:
+`aiokafka.errors.UnsupportedCodecError: Libraries for lz4 compression codec not found` (llm-service's producers compress with lz4; billing's environment had no codec).
+Billing's B2 added `cramjam`, a startup check for the gzip/snappy/lz4/zstd codecs, and a consumer loop that backs off and retries instead of killing the worker.
+After `dev_down.sh` / `dev_up.sh` the worker processed the stuck message:
+```
+SELECT kind, source_id, model, cost_micro_inr FROM billing.usage_events WHERE source_id = 'e54ceb41-939c-4963-992b-47360e269f97';
+
+  kind   |              source_id               |        model        | cost_micro_inr
+---------+--------------------------------------+---------------------+----------------
+ message | e54ceb41-939c-4963-992b-47360e269f97 | openai/gpt-oss-120b |          48657
+(1 row)
+
+SELECT model, model_group, input_tokens, cached_input_tokens, output_tokens, aux_input_tokens, aux_output_tokens, cost_micro_inr, hold_id ...
+
+        model        | model_group | input_tokens | cached_input_tokens | output_tokens | aux_input_tokens | aux_output_tokens | cost_micro_inr | hold_id
+---------------------+-------------+--------------+---------------------+---------------+------------------+-------------------+----------------+---------
+ openai/gpt-oss-120b | smart       |         2412 |                   0 |           102 |              545 |               161 |          48657 |
+(1 row)
+```
+The answer call (`gpt-oss-120b`: 2,412 in, 102 out) is in the main columns and the `request_analysis` call (`gpt-oss-20b`: 545 in, 161 out) in the `aux_*` columns of the same
+row, exactly the provider-reported figures in the 2.2 event above; cost 48,657 micro-INR (non-zero). Nothing went to billing's DLQ; the worker's `/readyz` is `ready`.
+(Output copied from the run in this session; no separate paste was received.)
 
 Processes: the llm-service I started on 8003 is stopped (nothing listens on 8003). The 8003 service you had running is gone: start it with `make` when you want it back.
 
