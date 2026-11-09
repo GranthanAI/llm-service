@@ -45,6 +45,7 @@ from app.providers import (
     NVIDIAAdapter,
 )
 from app.providers.chain import ChainEntry, ProviderChain
+from app.providers.group_chain import build_group_chains
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.groq_client import GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
@@ -350,6 +351,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             fitter=build_chain_fitter(config, context_window_manager, log),
         )
         log.info("Generation chain configured", order=[e.name for e in chain_entries])
+    # Billing model groups (config/models.yaml): an invalid registry is a startup error.
+    group_chains = build_group_chains(config, context_window_manager, cb_registry)
+    container.group_chains = group_chains
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter
     container.groq_adapter = groq_adapter
@@ -374,6 +378,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config=config,
         tool_registry=tool_registry,
         tool_dispatcher=tool_dispatcher,
+        group_chains=group_chains,
     )
     container.request_pipeline = request_pipeline
     chat_consumer = ChatConsumer(pipeline=request_pipeline)

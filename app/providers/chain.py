@@ -31,6 +31,10 @@ class ChainEntry:
     adapter: BaseProviderAdapter
     breaker: CircuitBreaker | None
     first_token_timeout_s: float | None
+    # Set only for billing group chains: the registry entry (catalog id, window, output limit) and the grant's
+    # context cap. None for the legacy GENERATION_PROVIDER_ORDER chain.
+    spec: Any = None
+    input_cap: int | None = None
 
 
 class ProviderChain:
@@ -66,7 +70,9 @@ class ProviderChain:
             attempt_prompt = prompt
             if self.fitter is not None:
                 try:
-                    attempt_prompt = self.fitter(prompt, entry.name)
+                    attempt_prompt = (
+                        self.fitter(prompt, entry.name, entry) if entry.spec is not None else self.fitter(prompt, entry.name)
+                    )
                 except ContextOverflowError as exc:
                     # Not a provider failure and not a rate limit: the request cannot fit THIS provider's budget.
                     failures.append((entry.name, f"context_too_large: {exc}"))
@@ -91,6 +97,8 @@ class ProviderChain:
                             fallback_used=bool(failures),
                             fallback_reason=failures[-1][1] if failures else None,
                         )
+                        if entry.spec is not None:     # billing group chain only: the catalog id that answered
+                            route["model_id"] = entry.spec.id
                     yield token
                 return
             except Exception as exc:

@@ -67,6 +67,7 @@ class RequestPipeline:
         tool_registry: Any | None = None,
         tool_dispatcher: Any | None = None,
         query_rewriter: SearchQueryRewriter | None = None,
+        group_chains: Any | None = None,
     ):
         self.context_collector = context_collector
         self.request_analyzer = request_analyzer
@@ -83,6 +84,8 @@ class RequestPipeline:
         self.logger = logger or get_logger("request_pipeline")
         self.tool_registry = tool_registry
         self.tool_dispatcher = tool_dispatcher
+        # GroupChainBuilder (billing model groups); None = group routing not configured.
+        self.group_chains = group_chains
         # Default: rewrite follow-up search queries with the analyzer's Groq client when one exists.
         self.query_rewriter = query_rewriter or SearchQueryRewriter(
             getattr(request_analyzer, "groq_client", None),
@@ -247,8 +250,9 @@ class RequestPipeline:
                 )
 
             # 6. Context Window Management (trim to model budget)
+            group_chain = self._group_chain(ctx)       # None = legacy chain (no billing grant)
             provider_name, target_model, max_tokens, trimmed, fit = self._fit_to_first_fitting_provider(
-                result=result, ctx=ctx, composed=composed)
+                result=result, ctx=ctx, composed=composed, chain=group_chain)
             timing["context_tokens"] = fit.tokens_after
             timing["context_compaction"] = fit.compaction
             t = _lap("prompt_ms", t)
@@ -260,9 +264,8 @@ class RequestPipeline:
                 "temperature": plan.suggested_temperature,
                 "max_tokens": max_tokens,
             }
-            token_iter = self._track_route(
-                self.generation_router.generate_stream(trimmed, params), params, ctx
-            )
+            router = group_chain if group_chain is not None else self.generation_router
+            token_iter = self._track_route(router.generate_stream(trimmed, params), params, ctx)
 
             # 8. Streaming Engine: publishes chat.response.chunk incrementally, then
             # chat.response.generated + memory.update.requested on completion.
@@ -301,6 +304,18 @@ class RequestPipeline:
                     message_id=ctx.message_id,
                 )
 
+    def _group_chain(self, ctx: PipelineContext) -> Any | None:
+        """The request-scoped chain for a billing grant, or None for legacy routing. A grant for a model group is never
+        answered by the legacy chain: if group routing is not configured the request fails instead."""
+        grant = ctx.billing
+        if grant is None or not grant.granted_group:
+            return None
+        if self.group_chains is None:
+            from app.exceptions.provider import AllProvidersFailedError
+            raise AllProvidersFailedError(
+                f"billing granted model group {grant.granted_group!r} but group routing is not configured (MODEL_REGISTRY_FILE)")
+        return self.group_chains.build(grant)
+
     def _provider_candidates(self) -> list[tuple[str, str, int]]:
         """(provider, model, max output tokens) for every provider the generation chain may try, in order. Without a
         configured chain it is the single legacy primary."""
@@ -322,17 +337,28 @@ class RequestPipeline:
         """The provider that will be tried FIRST. Other providers re-validate when they are tried (see ProviderChain)."""
         return self._provider_candidates()[0]
 
-    def _fit_to_first_fitting_provider(self, *, result: Any, ctx: PipelineContext, composed: Any) -> tuple:
+    def _fit_to_first_fitting_provider(self, *, result: Any, ctx: PipelineContext, composed: Any, chain: Any = None) -> tuple:
         """Fits the prompt to the first provider in the chain; when even its mandatory content does not fit that
         provider's budget (a small free-tier cap), the next provider is tried instead of failing the request (the chain
         itself then skips the providers that were too small). Raises the overflow only when NO provider can take it."""
         last: ContextOverflowError | None = None
-        for provider_name, target_model, max_tokens in self._provider_candidates():
+        if chain is not None:
+            # Billing group chain: each model's registry window and the grant's context cap bound the budget.
+            from app.context_window.budget_policy import provider_of
+            from app.context_window.fit import group_limits
+            candidates = [(e.name, e.spec.provider_model, e.spec.max_output_tokens, e) for e in chain.entries]
+        else:
+            candidates = [(n, m, t, None) for n, m, t in self._provider_candidates()]
+        for provider_name, target_model, max_tokens, entry in candidates:
             try:
+                extra = {}
+                if entry is not None:
+                    extra = {"limits": group_limits(entry.spec), "input_cap": entry.input_cap}
                 trimmed, fit = fit_prompt(
                     config=self.config, manager=self.context_window_manager, prompt_builder=self.prompt_builder,
-                    result=result, ctx=ctx, composed=composed, provider=provider_name, model=target_model,
-                    max_output_tokens=max_tokens, logger=self.logger)
+                    result=result, ctx=ctx, composed=composed,
+                    provider=provider_of(provider_name) if entry is not None else provider_name, model=target_model,
+                    max_output_tokens=max_tokens, logger=self.logger, **extra)
             except ContextOverflowError as exc:
                 last = exc
                 self.logger.warning("context_overflow_trying_next_provider", provider=provider_name, model=target_model)

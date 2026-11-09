@@ -17,7 +17,7 @@ from app.config.settings import LLMServiceConfig
 from app.context_window.budget_policy import ContextBudget, resolve_context_budget
 from app.context_window.compaction import compact_history
 from app.context_window.manager import ContextWindowManager
-from app.context_window.models import TrimmedPrompt
+from app.context_window.models import ModelLimits, TrimmedPrompt
 from app.exceptions.analysis import ContextOverflowError
 from app.utils import metrics
 
@@ -66,10 +66,16 @@ def fit_prompt(
     model: str,
     max_output_tokens: int | None,
     logger: Any,
+    limits: ModelLimits | None = None,
+    input_cap: int | None = None,
 ) -> tuple[TrimmedPrompt, FitReport]:
-    limits, assumed = manager.resolve_limits(model)
+    # `limits` / `input_cap` are set for billing group routing (registry window and the grant's context cap).
+    if limits is not None:
+        assumed = False
+    else:
+        limits, assumed = manager.resolve_limits(model)
     budget = resolve_context_budget(config, provider, model, limits, window_assumed=assumed,
-                                    requested_output_tokens=max_output_tokens)
+                                    requested_output_tokens=max_output_tokens, input_cap=input_cap)
     counter = manager.token_counter
     estimate = counter.count_messages(composed.messages, provider)
     before = estimate
@@ -146,7 +152,7 @@ def fit_prompt(
 def _label(provider: str) -> str:
     """Bounded metric label: a fixed set of provider names, never an arbitrary string."""
     p = provider.split(":", 1)[0].lower()
-    return p if p in ("groq", "gemini", "nvidia") else "other"
+    return p if p in ("groq", "gemini", "nvidia", "anthropic", "openai") else "other"
 
 
 def build_chain_fitter(config: LLMServiceConfig, manager: ContextWindowManager, logger: Any):
@@ -186,3 +192,44 @@ def build_chain_fitter(config: LLMServiceConfig, manager: ContextWindowManager, 
 
     return fit
 
+
+
+def group_limits(spec: Any) -> ModelLimits:
+    """ModelLimits from a registry entry (its real window and output limit)."""
+    return ModelLimits(model=spec.provider_model, context_window=spec.context_window,
+                       max_output_tokens=spec.max_output_tokens, provider=spec.provider)
+
+
+def build_group_fitter(config: LLMServiceConfig, manager: ContextWindowManager, logger: Any):
+    """Like build_chain_fitter, for billing group chains: fit(prompt, entry_name, entry). The budget is
+    min(grant.max_context_tokens, the model's registry window, the existing budget policy), through the same trimming
+    path (ContextWindowManager.manage); no separate truncation."""
+    from app.context_window.budget_policy import provider_of
+    from app.prompts.schemas import ComposedPrompt
+
+    def fit(prompt: TrimmedPrompt, entry_name: str, entry: Any) -> TrimmedPrompt:
+        spec = entry.spec
+        provider = provider_of(entry_name)
+        max_out = spec.max_output_tokens
+        budget = resolve_context_budget(config, provider, spec.provider_model, group_limits(spec), window_assumed=False,
+                                        requested_output_tokens=max_out, input_cap=entry.input_cap)
+        counter = manager.token_counter
+        current = counter.count_messages(prompt.messages, provider)
+        if current <= budget.input_budget:
+            return prompt
+        composed = ComposedPrompt(sections=prompt.sections, total_tokens=prompt.total_tokens, messages=[], mode=prompt.mode,
+                                  engine_type="mode_handler")
+        target = budget.input_budget
+        for _ in range(_REFIT_PASSES):
+            trimmed = manager.manage(composed, target_model=spec.provider_model, custom_input_budget=target,
+                                     max_output_tokens=max_out)
+            final = counter.count_messages(trimmed.messages, provider)
+            if final <= budget.input_budget:
+                logger.info("context_refit_for_group_model", model=spec.id, tokens_before=current, tokens_after=final,
+                            input_budget=budget.input_budget, request_cap=entry.input_cap)
+                return trimmed
+            target = max(1, target - (final - budget.input_budget))
+        metrics.CONTEXT_OVERFLOW_TOTAL.labels(provider=_label(provider)).inc()
+        raise ContextOverflowError(f"does not fit {spec.id}'s context budget ({final} > {budget.input_budget} tokens)")
+
+    return fit

@@ -60,6 +60,7 @@ def resolve_context_budget(
     *,
     window_assumed: bool = False,
     requested_output_tokens: int | None = None,
+    input_cap: int | None = None,
 ) -> ContextBudget:
     provider = provider_of(provider)
 
@@ -103,6 +104,9 @@ def resolve_context_budget(
     legacy = False
     if config.prompt_token_budget and config.prompt_token_budget < input_budget:
         input_budget, legacy = config.prompt_token_budget, True
+    # Request-level cap (billing's max_context_tokens for this grant): one more ceiling, never a floor.
+    if input_cap and input_cap < input_budget:
+        input_budget = input_cap
     if input_budget < MIN_INPUT_TOKENS:
         raise ContextBudgetError(
             f"effective input budget for {provider}:{model} is {input_budget} tokens "

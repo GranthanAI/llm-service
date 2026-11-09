@@ -25,6 +25,7 @@ RUN uv pip install --system -e ".[dev]"
 
 # Copy application source code
 COPY app/ ./app/
+COPY config/ ./config/
 COPY scripts/ ./scripts/
 COPY docs/ ./docs/
 

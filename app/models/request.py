@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.models.billing import BillingGrant
+
 
 class TraceContext(BaseModel):
     """W3C Distributed Trace Context."""
@@ -94,6 +96,8 @@ class ChatMessageCreatedEvent(BaseModel):
     defaults_applied: DefaultsApplied = Field(default_factory=DefaultsApplied)
     # 2.3 (additive): the custom mode this request runs on (mode_hint is then the built-in path: default/smart).
     custom_mode: CustomModeSnapshot | None = None
+    # 2.4 (additive): what billing granted this request (model group, context cap, hold). Absent = legacy routing.
+    billing: BillingGrant | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_context: TraceContext = Field(default_factory=TraceContext)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

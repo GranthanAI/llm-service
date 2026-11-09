@@ -184,6 +184,12 @@ class LLMServiceConfig(BaseSettings):
 
     tavily_api_key: SecretStr = Field(default=SecretStr(""))
 
+    # Billing model registry (config/models.yaml, keyed by billing's catalog ids) and the providers it adds.
+    # A model whose provider has no key here is skipped in group routing.
+    model_registry_file: str = "config/models.yaml"
+    anthropic_api_key: SecretStr = Field(default=SecretStr(""))
+    openai_api_key: SecretStr = Field(default=SecretStr(""))
+
     # Tool Timeouts
     web_search_timeout_ms: int = 5000
 

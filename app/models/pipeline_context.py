@@ -83,6 +83,8 @@ class PipelineContext(BaseModel):
     completed_at: datetime | None = None
     pii_detected: bool = False
     safety_check_failed: bool = False
+    # What billing granted this request (None = legacy routing).
+    billing: Any = None
 
     @classmethod
     def from_event(
@@ -119,6 +121,7 @@ class PipelineContext(BaseModel):
             inherited_history=[(h.role, h.content) for h in event.history if h.inherited],
             ancestors=[a.model_dump() for a in event.ancestors],
             custom_mode=event.custom_mode,
+            billing=event.billing,
             preferences=normalize_preferences(event.preferences),
             started_at=datetime.now(UTC),
         )
