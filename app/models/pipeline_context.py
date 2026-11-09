@@ -87,6 +87,11 @@ class PipelineContext(BaseModel):
     billing: Any = None
     # The request's UsageCollector (app/usage): one CallUsage per model call.
     usage_collector: Any = None
+    # Billing catalog id of the model that answered (group chains), the trimmed prompt sent to the model (for an
+    # estimate if the call is cancelled mid-stream), and whether this request has published its terminal event.
+    answered_model: str | None = None
+    final_prompt_messages: Any = None
+    terminal_published: bool = False
 
     @classmethod
     def from_event(

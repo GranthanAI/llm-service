@@ -98,6 +98,13 @@ class StreamingEngine:
                         message_id=ctx.message_id,
                         reason=cancellation_token.reason,
                     )
+                    aclose = getattr(token_iter, "aclose", None)
+                    if aclose is not None:               # stop the provider call; no further tokens are consumed
+                        try:
+                            await aclose()
+                        except Exception:
+                            pass
+                    self._record_cancelled_usage(ctx, "".join(full_content))
                     await self.publisher.publish_cancellation(
                         ctx, reason=cancellation_token.reason or "client_disconnected"
                     )
@@ -219,6 +226,20 @@ class StreamingEngine:
             )
 
             return full_response
+
+    @staticmethod
+    def _record_cancelled_usage(ctx: PipelineContext, partial: str) -> None:
+        """The answer call of a cancelled stream never reached its final usage chunk: record the partial output as an
+        estimate (flagged), so billing sees that tokens were produced and the message counts as used."""
+        collector = getattr(ctx, "usage_collector", None)
+        if collector is None or not partial:
+            return
+        name = str(ctx.selected_provider or "")
+        provider, _, model = name.partition(":")
+        collector.record_provider_usage(
+            provider=provider or "unknown", model=getattr(ctx, "answered_model", None) or model or provider or "unknown",
+            input_tokens=None, output_tokens=None, messages=getattr(ctx, "final_prompt_messages", None),
+            output_text=partial, purpose="answer")
 
     async def _flush_buffer(
         self,

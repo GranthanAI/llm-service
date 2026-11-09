@@ -73,7 +73,7 @@ class ChatResponseGeneratedEvent(BaseModel):
     """
 
     event_type: str = "chat.response.generated"
-    schema_version: str = "2.1"
+    schema_version: str = "2.2"
     response_id: str
     conversation_id: str
     user_id: str
@@ -97,6 +97,12 @@ class ChatResponseGeneratedEvent(BaseModel):
     status: str = "success"  # "success" | "error"
     error_code: str | None = None
     error_message: str | None = None
+    # 2.2 (additive, billing): what billing granted and every model call this request made (plan 4.4.2).
+    hold_id: str | None = None
+    model_group: str | None = None
+    model: str | None = None                  # catalog id of the model that answered (legacy: the provider model)
+    downgraded: bool = False
+    calls: list[dict[str, Any]] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -121,6 +127,8 @@ class MemoryUpdateRequestedEvent(BaseModel):
     assistant_created_at: datetime | None = None
     # Additive: set when this answer is a REGENERATION; memory-service then replaces the discarded answer with this one.
     replaces_message_id: str | None = None
+    # Additive: the request that produced this answer (billing/analytics join key).
+    request_message_id: str | None = None
 
 
 class ChatResponseCancelledEvent(BaseModel):
@@ -130,11 +138,18 @@ class ChatResponseCancelledEvent(BaseModel):
     """
 
     event_type: str = "chat.response.cancelled"
+    schema_version: str = "2.2"
     conversation_id: str
     user_id: str
     message_id: str
     response_message_id: str | None = None
     reason: str = "client_disconnected"
+    # 2.2 (additive, billing): what billing granted and every model call this request made (plan 4.4.2).
+    hold_id: str | None = None
+    model_group: str | None = None
+    model: str | None = None                  # catalog id of the model that answered (legacy: the provider model)
+    downgraded: bool = False
+    calls: list[dict[str, Any]] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

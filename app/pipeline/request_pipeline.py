@@ -277,6 +277,7 @@ class RequestPipeline:
             # 7. Generation (streaming) with provider fallback
             ctx.inference_started_at = datetime.now(UTC)
             ctx.selected_provider = provider_name
+            ctx.final_prompt_messages = trimmed.messages
             params: dict = {
                 "temperature": plan.suggested_temperature,
                 "max_tokens": max_tokens,
@@ -506,4 +507,6 @@ class RequestPipeline:
                     ctx.selected_provider = route["provider"]
                 if route.get("fallback_used"):
                     ctx.generation_fallback_used = True
+                if route.get("model_id"):               # billing group chain: the catalog id that answered
+                    ctx.answered_model = route["model_id"]
             yield token

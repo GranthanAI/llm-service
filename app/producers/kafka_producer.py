@@ -24,6 +24,7 @@ from app.models.response import (
     UsageMetrics,
 )
 from app.context.timecodes import parse_time_section
+from app.producers.billing_fields import billing_fields
 from app.utils.retry import RetryManager, RetryPolicy
 
 
@@ -118,6 +119,30 @@ class KafkaPublisher:
             "KafkaPublisher started successfully",
             bootstrap_servers=self.config.kafka_bootstrap_servers,
         )
+
+    # --- exactly one terminal event per request -------------------------------------------------------------------
+    # A request ends in exactly one of: chat.response.generated (success), chat.response.generated status=error, or
+    # chat.response.cancelled. Whichever is published first wins; a later attempt (an error raised after the answer was
+    # already published, a cancel racing a failure) is dropped. The guard is per process (bounded); across a process
+    # restart delivery is at-least-once (see reports/P5-report.md).
+    _TERMINAL_MAX = 20_000
+
+    def _terminal_already_published(self, ctx: PipelineContext, kind: str) -> bool:
+        done = getattr(self, "_terminal_ids", None)
+        if done is None:
+            done = self._terminal_ids = {}
+        if getattr(ctx, "terminal_published", False) or ctx.message_id in done:
+            self.logger.warning("terminal_event_suppressed", kind=kind, message_id=ctx.message_id,
+                                conversation_id=ctx.conversation_id)
+            return True
+        return False
+
+    def _mark_terminal_published(self, ctx: PipelineContext) -> None:
+        ctx.terminal_published = True
+        done = self._terminal_ids
+        done[ctx.message_id] = True
+        while len(done) > self._TERMINAL_MAX:
+            done.pop(next(iter(done)))
 
     async def stop(self) -> None:
         """Flush and stop the producer."""
@@ -242,8 +267,11 @@ class KafkaPublisher:
             trace_context=TraceContext(traceparent=ctx.trace_id),
             status="success",
             timestamp=datetime.now(UTC),
+            **billing_fields(ctx, answered=True),
         )
 
+        if self._terminal_already_published(ctx, "generated"):
+            return
         await self._send(
             topic=self.config.kafka_output_topic,
             key=ctx.conversation_id,
@@ -251,6 +279,7 @@ class KafkaPublisher:
             trace_context=TraceContext(traceparent=ctx.trace_id),
             correlation_id=ctx.request_id,
         )
+        self._mark_terminal_published(ctx)
         self.logger.info(
             "Published final response event",
             conversation_id=ctx.conversation_id,
@@ -263,6 +292,11 @@ class KafkaPublisher:
         self, ctx: PipelineContext, event: ChatResponseGeneratedEvent
     ) -> None:
         """Publish an error-variant chat.response.generated event so the caller is never left waiting."""
+        if self._terminal_already_published(ctx, "error"):
+            return
+        for name, value in billing_fields(ctx).items():       # the grant echo and every call made so far
+            if hasattr(event, name):
+                setattr(event, name, value)
         await self._send(
             topic=self.config.kafka_output_topic,
             key=ctx.conversation_id,
@@ -270,6 +304,7 @@ class KafkaPublisher:
             trace_context=TraceContext(traceparent=ctx.trace_id),
             correlation_id=ctx.request_id,
         )
+        self._mark_terminal_published(ctx)
         self.logger.warning(
             "Published error response event",
             conversation_id=ctx.conversation_id,
@@ -298,6 +333,7 @@ class KafkaPublisher:
             user_created_at=user_created_at,
             assistant_created_at=max(now, user_created_at),
             replaces_message_id=ctx.replaces_message_id,
+            request_message_id=ctx.message_id or None,
         )
         await self._send(
             topic="memory.update.requested",
@@ -317,13 +353,17 @@ class KafkaPublisher:
             response_message_id=ctx.response_message_id,
             reason=reason,
             timestamp=datetime.now(UTC),
+            **billing_fields(ctx),
         )
+        if self._terminal_already_published(ctx, "cancelled"):
+            return
         await self._send(
             topic="chat.response.cancelled",
             key=ctx.conversation_id,
             payload=cancel_event,
             correlation_id=ctx.request_id,
         )
+        self._mark_terminal_published(ctx)
 
     async def publish_dlq(self, event: ChatMessageDLQEvent) -> None:
         """Publish unprocessable or permanently failed message to Dead Letter Queue."""
