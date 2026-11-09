@@ -106,6 +106,8 @@ class LLMServiceConfig(BaseSettings):
     #   off = no call (default) | shadow = call and log, never block | enforce = a deny stops the render (429/403/402)
     billing_reserve_manim: Literal["off", "shadow", "enforce"] = "off"
     billing_grpc_target: str = "localhost:50051"
+    # billing-service REST base URL, for the model catalog check (GET /billing/v1/models, every 10 minutes).
+    billing_service_url: str = "http://billing-api:8080"
     billing_service_token: SecretStr = Field(default=SecretStr(""))
 
     # ---- Context budget (application policy; independent of provider rate limits) ----

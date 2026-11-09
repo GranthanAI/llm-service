@@ -375,6 +375,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.billing_client = billing_client
     if group_chains is not None:
         container.catalog_model = lambda provider, model: group_chains.registry.catalog_id(provider, model) or model
+        # Catalog check (never blocks startup): billing's models vs this registry, now and every 10 minutes.
+        from app.providers.catalog_check import CatalogChecker
+        container.catalog_checker = CatalogChecker(
+            config.billing_service_url, group_chains.registry, group_chains._has_credentials, group_chains.can_serve)
+        container.catalog_checker.start()
 
     # 12. Initialize Kafka Consumer
     request_pipeline = RequestPipeline(
@@ -427,6 +432,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await container.kafka_producer.stop()
             except Exception:
                 pass
+        if getattr(container, "catalog_checker", None):
+            await container.catalog_checker.stop()
         if getattr(container, "billing_client", None):
             try:
                 await container.billing_client.close()

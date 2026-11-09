@@ -1,0 +1,88 @@
+{
+  "models": [
+    {
+      "id": "openai/gpt-oss-20b",
+      "label": "GPT-OSS 20B",
+      "provider": "groq",
+      "group": "fast",
+      "sort_order": 1
+    },
+    {
+      "id": "gemini-2.5-flash-lite",
+      "label": "Gemini 2.5 Flash-Lite",
+      "provider": "google",
+      "group": "fast",
+      "sort_order": 2
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "label": "GPT-OSS 120B",
+      "provider": "groq",
+      "group": "smart",
+      "sort_order": 3
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "label": "Claude Haiku 5.5",
+      "provider": "anthropic",
+      "group": "smart",
+      "sort_order": 4
+    },
+    {
+      "id": "gpt-6-luna",
+      "label": "GPT-6 Luna",
+      "provider": "openai",
+      "group": "smart",
+      "sort_order": 5
+    },
+    {
+      "id": "gemini-3.1-flash-lite",
+      "label": "Gemini 3.1 Flash-Lite",
+      "provider": "google",
+      "group": "smart",
+      "sort_order": 6
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "label": "Gemini 2.5 Flash",
+      "provider": "google",
+      "group": "smart",
+      "sort_order": 7
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "label": "Claude Sonnet 5.5",
+      "provider": "anthropic",
+      "group": "best",
+      "sort_order": 8
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "label": "GPT-6.1 Sol",
+      "provider": "openai",
+      "group": "best",
+      "sort_order": 9
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "label": "Gemini 3.1 Pro",
+      "provider": "google",
+      "group": "best",
+      "sort_order": 10
+    },
+    {
+      "id": "claude-opus-5-5",
+      "label": "Claude Opus 5.5",
+      "provider": "anthropic",
+      "group": "ultra",
+      "sort_order": 11
+    },
+    {
+      "id": "gpt-6-astra",
+      "label": "GPT-6 Astra",
+      "provider": "openai",
+      "group": "ultra",
+      "sort_order": 12
+    }
+  ]
+}

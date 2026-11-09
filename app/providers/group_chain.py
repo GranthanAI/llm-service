@@ -47,6 +47,10 @@ class GroupChainBuilder:
         self._adapters: dict[str, BaseProviderAdapter | None] = {}
         self._missing_logged: set[str] = set()
 
+    def can_serve(self, spec: ModelSpec) -> bool:
+        """An adapter exists for this model (credentials are checked separately)."""
+        return self._adapter(spec) is not None
+
     def _adapter(self, spec: ModelSpec) -> BaseProviderAdapter | None:
         if spec.id not in self._adapters:
             self._adapters[spec.id] = self._adapter_factory(spec)
