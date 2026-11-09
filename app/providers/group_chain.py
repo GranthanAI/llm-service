@@ -107,6 +107,7 @@ def build_group_chains(config: Any, context_window_manager: Any, breaker_registr
     from app.providers.groq import GroqAdapter
 
     registry = ModelRegistry.load(config.model_registry_file)
+    registry.cap_outputs({"groq": config.groq_max_tokens, "google": config.gemini_max_tokens})
     keys = {
         "groq": config.groq_api_key.get_secret_value(),
         "google": config.gemini_api_key.get_secret_value(),

@@ -105,7 +105,7 @@ class LLMServiceConfig(BaseSettings):
     # Billing (billing integration plan 4.5): Manim renders are reserved with billing-service over gRPC.
     #   off = no call (default) | shadow = call and log, never block | enforce = a deny stops the render (429/403/402)
     billing_reserve_manim: Literal["off", "shadow", "enforce"] = "off"
-    billing_grpc_target: str = "localhost:50051"
+    billing_grpc_target: str = "127.0.0.1:50061"
     # billing-service REST base URL, for the model catalog check (GET /billing/v1/models, every 10 minutes).
     billing_service_url: str = "http://billing-api:8080"
     billing_service_token: SecretStr = Field(default=SecretStr(""))

@@ -157,6 +157,18 @@ class ModelRegistry:
                 members = [first] + [m for m in members if m.id != first.id]
         return [m for m in members if self._usable(m, has_credentials)]
 
+    def cap_outputs(self, caps: dict[str, int]) -> None:
+        """Lower each model's output limit to the service's own per-provider limit (GROQ_MAX_TOKENS, GEMINI_MAX_TOKENS, ...).
+        Without it a Groq free-tier request asks for 8192 output tokens against an 8000-token-per-request cap and the context
+        budget comes out negative."""
+        from dataclasses import replace
+
+        for model_id, spec in list(self.models.items()):
+            cap = caps.get(spec.provider)
+            if cap and cap < spec.max_output_tokens:
+                self.models[model_id] = replace(spec, max_output_tokens=cap)
+        self.__dict__.pop("_by_provider_model", None)
+
     def catalog_id(self, provider: str, provider_model: str) -> str | None:
         """The billing catalog id for a provider's model string (None for a legacy-only model with no catalog id)."""
         if not hasattr(self, "_by_provider_model"):

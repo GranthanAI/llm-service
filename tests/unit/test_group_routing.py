@@ -291,3 +291,17 @@ def test_group_fitter_trims_through_the_context_manager_to_the_grant_cap():
     assert calls and calls[0] == 20_000 and out.messages[0]["tokens"] <= 20_000
     small = SimpleNamespace(messages=[{"tokens": 1_000}], sections=[], total_tokens=1_000, mode="default")
     assert fit(small, "anthropic:claude-sonnet-5-5", entry) is small            # already within the cap: untouched
+
+
+def test_registry_output_limits_are_capped_by_the_service_settings_so_a_free_tier_groq_budget_stays_positive():
+    from app.context_window.budget_policy import resolve_context_budget
+    from app.context_window.fit import group_limits
+
+    reg = ModelRegistry.load(REGISTRY_FILE)
+    reg.cap_outputs({"groq": 2048, "google": 4096})
+    spec = reg.models["openai/gpt-oss-120b"]
+    assert spec.max_output_tokens == 2048 and reg.models["gemini-2.5-flash"].max_output_tokens == 4096
+    assert reg.models["claude-sonnet-5-5"].max_output_tokens == 8192          # no cap given for that provider
+    cfg = LLMServiceConfig(groq_tpm_limit=8000)                                # the free-tier cap that used to give -392
+    budget = resolve_context_budget(cfg, "groq", spec.provider_model, group_limits(spec), requested_output_tokens=spec.max_output_tokens)
+    assert budget.input_budget > 0

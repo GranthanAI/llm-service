@@ -24,7 +24,11 @@ from app.config.logging import get_logger
 
 logger = get_logger("usage_collector")
 
-PURPOSES = ("answer", "request_analysis", "query_rewrite", "workflow", "research", "manim_plan")
+PURPOSES = (
+    "answer", "request_analysis", "query_rewrite", "workflow", "research", "manim_plan",
+    # cost-only features published as usage.metered (purpose = feature)
+    "mermaid.repair", "manim.repair",
+)
 
 # billing's provider names (config/seed/model_prices.yaml): our "gemini" adapter is billing's "google"
 _PROVIDER_ALIASES = {"gemini": "google"}

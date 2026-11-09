@@ -260,10 +260,28 @@ async def repair(body: RepairRequest, container: ContainerDep, x_user_id: str | 
     store, _ = _services(container)
     if not await store.hourly_count(f"repair:{owner}", cfg.visualization_jobs_per_user_per_hour * 3):
         return {"ok": False, "failure": "budget_exhausted"}
-    out = await repair_block(container.generation_router, body.kind, body.content, body.error, body.attempt,
-                             max_mermaid=cfg.mermaid_max_source_chars, max_manim=cfg.manim_max_spec_chars)
+    feature = f"{body.kind}.repair"
+    collector = UsageCollector(model_resolver=getattr(container, "catalog_model", None))
+    try:
+        with use_collector(collector), usage_purpose(feature):
+            out = await repair_block(container.generation_router, body.kind, body.content, body.error, body.attempt,
+                                     max_mermaid=cfg.mermaid_max_source_chars, max_manim=cfg.manim_max_spec_chars)
+    finally:
+        await _meter_repair(container, owner, feature, collector)    # a repair that fails midway still cost tokens
     viz_metrics.VISUALIZATION_REPAIR_TOTAL.labels(kind=body.kind, result="ok" if out.ok else "failed").inc()
     return {"ok": out.ok, "content": out.content if out.ok else None, "failure": None if out.ok else (out.category or "render_error")}
+
+
+async def _meter_repair(container, user_id: str, feature: str, collector: UsageCollector) -> None:
+    """Cost-only metering (usage.metered 1.0): the repair is not tied to a message, so billing counts no limit for it,
+    it only learns what the call cost. Same producer and retry as every other event; never fails the repair."""
+    publisher = getattr(container, "kafka_producer", None)
+    if publisher is None or not collector.calls:
+        return
+    try:
+        await publisher.publish_usage_metered(user_id=user_id, feature=feature, calls=collector.snapshot())
+    except Exception as exc:
+        logger.error("usage_metered_publish_failed", feature=feature, error=type(exc).__name__)
 
 
 # ------------------------------------------------------------------------------------------------ worker-only API

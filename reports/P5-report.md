@@ -20,7 +20,7 @@ Range: `626020e..HEAD`.
 
 No test makes a live provider call (fake SDK streams, a fake gRPC billing server, a fake Kafka producer).
 
-## Exit check: NOT DONE
+## Exit check: see "P5x" below (the original "NOT DONE" note is kept for history)
 Billing was not running (nothing listens on 8090; the process on 50051 is **memory-service**, whose gRPC default clashes with billing's), the llm-service on 8003 is an
 older process, and the check makes **real Groq / Smart-model calls**, which I did not do without your say-so. To run it:
 1. Kafka must advertise `127.0.0.1:9092`. Billing: `PAYMENT_SIMULATION=true`, API + worker, `KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092`, gRPC on a free port
@@ -80,6 +80,40 @@ are not verified. Also: the docs say **`gemini-2.5-flash` is deprecated and rout
 3. Mermaid repair model calls are not metered.
 4. The gRPC port clash: memory-service and billing both default to 50051.
 5. `tavily_api_key` is unused (left as is).
+
+## P5x: Mermaid metering and the exit check (commit "P5x: mermaid metering and exit check")
+Decisions applied: `gemini-3.1-pro` stays disabled; no Redis terminal-event guard (consumers dedupe on `request_message_id`); billing gRPC default is now
+`127.0.0.1:50061` (settings; `.env.example` already had it).
+
+**Mermaid repair metering.** `POST /v1/visualizations/repair` now publishes `usage.metered` 1.0 (`producer: "llm-service"`, `feature: "mermaid.repair"`,
+`user_id` from `X-User-Id`, `calls` = the repair's `CallUsage`, `fixed_cost_micro_inr: 0`) through `KafkaPublisher._send` (same retry as the other events).
+A repair that fails validation or whose provider dies after being billed is still metered; a publish failure never fails the repair. The same endpoint with
+`kind: "manim"` is metered as `manim.repair`. New purposes `mermaid.repair` / `manim.repair`. Tests: `tests/unit/test_mermaid_metering.py` (6 passed).
+
+**Bug found by the exit check (fixed).** A Smart request failed with `ContextBudgetError: effective input budget for groq:openai/gpt-oss-120b is -392 tokens`: the registry
+asked Groq for 8192 output tokens while `GROQ_TPM_LIMIT=8000`. The registry's output limits are now capped by the service's own `GROQ_MAX_TOKENS` / `GEMINI_MAX_TOKENS`
+(`ModelRegistry.cap_outputs`, test in `test_group_routing.py`).
+
+**Exit check against the shared billing (127.0.0.1:8090 / 50061), Kafka 127.0.0.1:9092, llm-service on 8003 running this code, real Groq calls.**
+The old llm-service on 8003 (pid 15300, started 9 Nov 23:06) was stopped by killing its launcher tree (21104), then the new code was started with
+`BILLING_SERVICE_TOKEN` = the llm token, `BILLING_SERVICE_URL=http://127.0.0.1:8090`, `BILLING_GRPC_TARGET=127.0.0.1:50061`.
+`scripts/p5_exit_check.py`, request_message_id `e54ceb41-939c-4963-992b-47360e269f97`:
+```
+schema_version 2.2, status success, provider groq:openai/gpt-oss-120b, hold_id null, model_group smart, model openai/gpt-oss-120b, downgraded false
+usage {prompt 2412, completion 102, total 2514}
+calls:
+  {"provider":"groq","model":"openai/gpt-oss-20b","purpose":"request_analysis","input_tokens":545,"cached_input_tokens":0,"output_tokens":161,"usage_estimated":false}
+  {"provider":"groq","model":"openai/gpt-oss-120b","purpose":"answer","input_tokens":2412,"cached_input_tokens":0,"output_tokens":102,"usage_estimated":false}
+PASS (calls include request_analysis + answer, provider-reported)
+```
+**Billing side: NOT DONE.** `SELECT ... FROM billing.usage_events WHERE source_id = 'e54ceb41-...'` returns 0 rows (note: the table is `billing.usage_events`, schema-qualified).
+Cause, from billing's own log (`billing-service/.dev/logs/worker.err.log`): the shared billing **worker crashed** when it consumed the event:
+`aiokafka.errors.UnsupportedCodecError: Libraries for lz4 compression codec not found`. llm-service's producers use `compression_type="lz4"`; billing's environment has no `lz4`.
+The worker (pid 23212) is no longer running (port 9100 is not listening); the API (8090/50061) is still up. The unconsumed `chat.response.generated` message will crash a restarted
+worker the same way. I did not touch billing. Decision for you: add `lz4` to billing's dependencies (any lz4 producer breaks billing otherwise), or switch llm-service's producer to
+`gzip` (billing's own producer uses gzip). Once billing's worker can read it, re-run the SQL above; the row should show non-zero `cost_micro_inr`.
+
+Processes: the llm-service I started on 8003 is stopped (nothing listens on 8003). The 8003 service you had running is gone: start it with `make` when you want it back.
 
 ## `docker system df` (end of session)
 ```

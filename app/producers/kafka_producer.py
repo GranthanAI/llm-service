@@ -365,6 +365,28 @@ class KafkaPublisher:
         )
         self._mark_terminal_published(ctx)
 
+    async def publish_usage_metered(
+        self, *, user_id: str, feature: str, calls: list[dict[str, Any]], conversation_id: str | None = None,
+        request_message_id: str | None = None, fixed_cost_micro_inr: int = 0,
+    ) -> None:
+        """Publish usage.metered 1.0 (billing plan 4.4.5): a model call that costs money but counts against no limit."""
+        import uuid
+
+        event = {
+            "event_type": "usage.metered",
+            "schema_version": "1.0",
+            "event_id": str(uuid.uuid4()),
+            "occurred_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "producer": "llm-service",
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "request_message_id": request_message_id,
+            "feature": feature,
+            "calls": calls,
+            "fixed_cost_micro_inr": fixed_cost_micro_inr,
+        }
+        await self._send(topic="usage.metered", key=user_id, payload=event)
+
     async def publish_manim_rendered(
         self, *, user_id: str, job_id: str, attempt: int, hold_id: str | None, status: str, calls: list[dict[str, Any]]
     ) -> None:
