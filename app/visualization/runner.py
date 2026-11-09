@@ -13,6 +13,7 @@ import json
 from collections.abc import Awaitable, Callable
 
 from app.utils import metrics as viz_metrics
+from app.visualization.billing import CURRENT_JOB
 from app.visualization.jobs import ACTIVE, JobRecord, JobState, JobStore
 from app.visualization.manim_templates import SpecError, validate_spec
 from app.visualization.policy import AttemptTracker, FailureCategory
@@ -43,6 +44,7 @@ async def _run_job(
     if record is None or record.state not in ACTIVE:
         return record
 
+    CURRENT_JOB.set((job_id, record.billing_attempt))       # repair calls made for this run belong to this job
     tracker = AttemptTracker(max_attempts=record.max_attempts)
     spec_json = json_dump(record.spec)
     last = FailureCategory.RENDER_ERROR
@@ -82,7 +84,7 @@ async def _run_job(
         except (ValueError, RecursionError):
             last = FailureCategory.INVALID_SPEC
         else:
-            await store.update(job_id, JobState.RENDERING)
+            await store.update(job_id, JobState.RENDERING, render_started=True)
             flag = {"c": False}
 
             async def watch() -> None:
@@ -137,9 +139,20 @@ def record_kind() -> str:
     return "manim"
 
 
-async def run_job(*args, **kwargs) -> JobRecord | None:
-    """Run a job and record its final state in metrics (bounded labels: state + failure category)."""
+async def run_job(*args, final: Callable[[JobRecord], Awaitable[None]] | None = None, **kwargs) -> JobRecord | None:
+    """Run a job and record its final state in metrics (bounded labels: state + failure category). `final` (billing) is
+    called once with the job's final record."""
     rec = await _run_job(*args, **kwargs)
     if rec is not None and rec.state not in ACTIVE:
         viz_metrics.MANIM_JOBS_TOTAL.labels(state=rec.state.value, failure=rec.failure or "none").inc()
+        if final is not None:
+            try:
+                await final(rec)
+            except Exception as exc:                  # billing must never change a job's outcome
+                viz_metrics_logger.warning("manim_final_hook_failed", error=type(exc).__name__)
     return rec
+
+
+import structlog  # noqa: E402
+
+viz_metrics_logger = structlog.get_logger("viz.runner")

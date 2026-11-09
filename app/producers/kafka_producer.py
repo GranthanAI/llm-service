@@ -365,6 +365,26 @@ class KafkaPublisher:
         )
         self._mark_terminal_published(ctx)
 
+    async def publish_manim_rendered(
+        self, *, user_id: str, job_id: str, attempt: int, hold_id: str | None, status: str, calls: list[dict[str, Any]]
+    ) -> None:
+        """Publish artifact.manim.rendered 1.0 (billing plan 4.4.3): one per billing attempt of a Manim job."""
+        import uuid
+
+        event = {
+            "event_type": "artifact.manim.rendered",
+            "schema_version": "1.0",
+            "event_id": str(uuid.uuid4()),
+            "occurred_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "user_id": user_id,
+            "job_id": job_id,
+            "attempt": attempt,
+            "hold_id": hold_id,
+            "status": status,
+            "calls": calls,
+        }
+        await self._send(topic="artifact.manim.rendered", key=user_id, payload=event, correlation_id=job_id)
+
     async def publish_dlq(self, event: ChatMessageDLQEvent) -> None:
         """Publish unprocessable or permanently failed message to Dead Letter Queue."""
         key = event.original_key or "dlq"

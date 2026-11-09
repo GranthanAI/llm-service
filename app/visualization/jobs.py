@@ -36,7 +36,9 @@ TERMINAL = frozenset({JobState.READY, JobState.FAILED, JobState.CANCELLED, JobSt
 ACTIVE = frozenset({JobState.PENDING, JobState.VALIDATING, JobState.RENDERING, JobState.REPAIRING})
 _ALLOWED = {
     JobState.PENDING: {JobState.VALIDATING, JobState.FAILED, JobState.CANCELLED, JobState.EXPIRED},
-    JobState.VALIDATING: {JobState.RENDERING, JobState.REPAIRING, JobState.FAILED, JobState.CANCELLED, JobState.EXPIRED},
+    # VALIDATING -> VALIDATING: the next attempt after a spec that failed validation before it ever rendered (without it the
+    # runner mistook that for a cancellation and left the job stuck in `validating`).
+    JobState.VALIDATING: {JobState.VALIDATING, JobState.RENDERING, JobState.REPAIRING, JobState.FAILED, JobState.CANCELLED, JobState.EXPIRED},
     JobState.RENDERING: {JobState.READY, JobState.REPAIRING, JobState.VALIDATING, JobState.FAILED, JobState.CANCELLED, JobState.EXPIRED},
     JobState.REPAIRING: {JobState.VALIDATING, JobState.FAILED, JobState.CANCELLED, JobState.EXPIRED},
     JobState.READY: {JobState.EXPIRED},
@@ -65,6 +67,11 @@ class JobRecord:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     history: list[str] = field(default_factory=list)
+    # Billing (P5e). `billing_attempt` is 1 for a new job and +1 each time a failed/cancelled/expired job is submitted
+    # again (the idempotency key is "{job_id}:{billing_attempt}"); `attempt` above counts render attempts INSIDE one run.
+    hold_id: str | None = None
+    billing_attempt: int = 1
+    render_started: bool = False       # the job reached `rendering` (a hold on a job that never did is released)
 
     def to_json(self) -> str:
         d = asdict(self)
@@ -92,6 +99,10 @@ class JobStore(Protocol):
     async def enqueue(self, job_id: str) -> None: ...
     async def dequeue(self, timeout: float = 1.0) -> str | None: ...
     async def claim(self, job_id: str) -> bool: ...                    # one worker only
+    async def add_calls(self, job_id: str, attempt: int, calls: list[dict]) -> None: ...   # model calls of a billing attempt
+    async def get_calls(self, job_id: str, attempt: int) -> list[dict]: ...
+    async def claim_event(self, job_id: str, attempt: int) -> bool: ...    # True once per (job, billing attempt)
+    async def unclaim_event(self, job_id: str, attempt: int) -> None: ...
 
 
 class MemoryJobStore:
@@ -100,6 +111,23 @@ class MemoryJobStore:
         self.queue: list[str] = []
         self.claimed: set[str] = set()
         self.hits: dict[str, list[float]] = {}
+        self.calls: dict[tuple[str, int], list[dict]] = {}
+        self.events: set[tuple[str, int]] = set()
+
+    async def add_calls(self, job_id, attempt, calls):
+        self.calls.setdefault((job_id, attempt), []).extend(calls)
+
+    async def get_calls(self, job_id, attempt):
+        return list(self.calls.get((job_id, attempt), []))
+
+    async def claim_event(self, job_id, attempt):
+        if (job_id, attempt) in self.events:
+            return False
+        self.events.add((job_id, attempt))
+        return True
+
+    async def unclaim_event(self, job_id, attempt):
+        self.events.discard((job_id, attempt))
 
     async def create_if_absent(self, record):
         existing = self.jobs.get(record.id)
@@ -232,3 +260,18 @@ class RedisJobStore:
 
     async def claim(self, job_id):
         return bool(await self.r.set(self._k("claim", job_id), "1", nx=True, ex=self.ttl))
+
+    async def add_calls(self, job_id, attempt, calls):
+        key = self._k("calls", job_id, str(attempt))
+        for c in calls:
+            await self.r.rpush(key, json.dumps(c))
+        await self.r.expire(key, self.ttl)
+
+    async def get_calls(self, job_id, attempt):
+        return [json.loads(x) for x in await self.r.lrange(self._k("calls", job_id, str(attempt)), 0, -1)]
+
+    async def claim_event(self, job_id, attempt):
+        return bool(await self.r.set(self._k("event", job_id, str(attempt)), "1", nx=True, ex=self.ttl))
+
+    async def unclaim_event(self, job_id, attempt):
+        await self.r.delete(self._k("event", job_id, str(attempt)))

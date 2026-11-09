@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import ContainerDep
 from app.utils import metrics as viz_metrics
+from app.usage.collector import UsageCollector, usage_purpose, use_collector
+from app.visualization.billing import CURRENT_JOB, ManimBilling
 from app.visualization.jobs import ACTIVE, JobRecord, JobState, MemoryJobStore, job_id_for
 from app.visualization.manim_templates import RENDERER_VERSION, SpecError, template_catalog, validate_spec
 from app.visualization.policy import FailureCategory, user_message
@@ -66,10 +68,26 @@ def _services(container):
 def _inline_repair(container):
     async def repair(kind: str, spec_json: str, error: str, attempt: int) -> str | None:
         cfg = container.config
-        out = await repair_block(container.generation_router, kind, spec_json, error, attempt,
-                                 max_manim=cfg.manim_max_spec_chars)
+        store, _ = _services(container)
+        collector = UsageCollector(model_resolver=getattr(container, "catalog_model", None))
+        try:
+            with use_collector(collector), usage_purpose("manim_plan"):
+                out = await repair_block(container.generation_router, kind, spec_json, error, attempt,
+                                         max_manim=cfg.manim_max_spec_chars)
+        finally:                                        # the repair's model calls belong to the job being run
+            await ManimBilling.record_repair_calls(store, collector, CURRENT_JOB.get())
         return out.content if out.ok else None
     return repair
+
+
+def _billing(container) -> ManimBilling:
+    return getattr(container, "manim_billing", None) or ManimBilling("off", None, None)
+
+
+def _final_hook(container, store):
+    async def final(record) -> None:
+        await _billing(container).finalize(store, record)
+    return final
 
 
 def _start_inline(container, job_id: str) -> None:
@@ -78,7 +96,8 @@ def _start_inline(container, job_id: str) -> None:
 
     async def go() -> None:
         try:
-            await run_job(store, media, job_id, repair=_inline_repair(container), python=cfg.manim_python,
+            await run_job(store, media, job_id, repair=_inline_repair(container), final=_final_hook(container, store),
+                          python=cfg.manim_python,
                           quality=cfg.manim_quality, timeout_seconds=cfg.manim_render_timeout_seconds,
                           max_output_bytes=cfg.manim_max_output_mb * 1024 * 1024, max_spec_chars=cfg.manim_max_spec_chars,
                           repair_enabled=cfg.visualization_repair_enabled)
@@ -144,13 +163,27 @@ async def create_job(body: JobRequest, container: ContainerDep, x_user_id: str |
             raise HTTPException(status_code=429, detail={"failure": "budget_exhausted", "message": "Too many animations in progress."})
         if not await store.hourly_count(owner, cfg.visualization_jobs_per_user_per_hour):
             raise HTTPException(status_code=429, detail={"failure": "budget_exhausted", "message": user_message("budget_exhausted")})
-    record = JobRecord(id=jid, owner=owner, spec=json.loads(spec.canonical_json()), max_attempts=cfg.visualization_max_attempts)
-    record, created = await store.create_if_absent(record)
-    if created:
-        if getattr(store, "inline", False):
-            _start_inline(container, jid)
-        else:
-            await store.enqueue(jid)
+    # Billing: a new job reserves with billing (after the limits above); a resubmitted failed job is a new billing attempt.
+    billing = _billing(container)
+    reusable = existing is not None and existing.state in (JobState.READY, *ACTIVE)
+    billing_attempt = (existing.billing_attempt + 1) if existing is not None and not reusable else 1
+    hold_id = None
+    if not reusable:
+        hold_id = await billing.reserve(owner, jid, billing_attempt)          # HTTPException(429/403/402) on an enforced deny
+    record = JobRecord(id=jid, owner=owner, spec=json.loads(spec.canonical_json()), max_attempts=cfg.visualization_max_attempts,
+                       hold_id=hold_id, billing_attempt=billing_attempt)
+    try:
+        record, created = await store.create_if_absent(record)
+        if created:
+            if getattr(store, "inline", False):
+                _start_inline(container, jid)
+            else:
+                await store.enqueue(jid)
+    except Exception:
+        await billing.release(owner, hold_id, "provider_error")               # nothing was queued: give the hold back
+        raise
+    if not created and hold_id:                                               # lost a race to an identical submission
+        await billing.release(owner, hold_id, "cancelled")
     return record.public()
 
 
@@ -201,6 +234,8 @@ async def cancel_job(job_id: str, container: ContainerDep, x_user_id: str | None
     store, _ = _services(container)
     if rec.state in ACTIVE:
         rec = await store.update(job_id, JobState.CANCELLED, failure=FailureCategory.CANCELLED.value) or rec
+        if rec.state == JobState.CANCELLED:
+            await _billing(container).finalize(store, rec)       # once per billing attempt, whoever sees the end first
     return rec.public()
 
 
@@ -238,6 +273,8 @@ class InternalRepair(BaseModel):
     content: str = Field(max_length=8000)
     error: str = Field(default="render_error", max_length=1000)
     attempt: int = Field(ge=2, le=5)
+    job_id: str | None = Field(default=None, pattern=r"^mj_[0-9a-f]{32}$")     # the job whose run asked for the repair
+    billing_attempt: int = Field(default=1, ge=1, le=1000)
 
 
 @internal_router.post("/repair")
@@ -246,9 +283,35 @@ async def internal_repair(body: InternalRepair, container: ContainerDep, x_inter
     secret = cfg.visualization_internal_token.get_secret_value()
     if not secret or not hmac.compare_digest(secret, x_internal_token or ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    out = await repair_block(container.generation_router, body.kind, body.content, body.error, body.attempt,
-                             max_manim=cfg.manim_max_spec_chars)
+    collector = UsageCollector(model_resolver=getattr(container, "catalog_model", None))
+    try:
+        with use_collector(collector), usage_purpose("manim_plan"):
+            out = await repair_block(container.generation_router, body.kind, body.content, body.error, body.attempt,
+                                     max_manim=cfg.manim_max_spec_chars)
+    finally:                                              # the model calls of the repair are billed with the job
+        if body.job_id:
+            store, _ = _services(container)
+            await ManimBilling.record_repair_calls(store, collector, (body.job_id, body.billing_attempt))
     return {"ok": out.ok, "content": out.content if out.ok else None}
+
+
+class JobFinal(BaseModel):
+    job_id: str = Field(pattern=r"^mj_[0-9a-f]{32}$")
+
+
+@internal_router.post("/final")
+async def internal_final(body: JobFinal, container: ContainerDep, x_internal_token: str | None = Header(default=None)) -> dict:
+    """The isolated worker reports that a job reached a final state; this process (which holds the Kafka producer and
+    the billing client) releases/publishes. Idempotent: one artifact.manim.rendered per billing attempt."""
+    secret = container.config.visualization_internal_token.get_secret_value()
+    if not secret or not hmac.compare_digest(secret, x_internal_token or ""):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    store, _ = _services(container)
+    rec = await store.get(body.job_id)
+    if rec is None or rec.state in ACTIVE:
+        return {"ok": False}
+    await _billing(container).finalize(store, rec)
+    return {"ok": True}
 
 
 __all__ = ["router", "internal_router", "validate_candidate"]

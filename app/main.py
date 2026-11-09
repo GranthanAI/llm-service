@@ -365,6 +365,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.kafka_producer = publisher
     container.streaming_engine = streaming_engine
 
+    # Manim x billing: reserve (BILLING_RESERVE_MANIM=off|shadow|enforce) and artifact.manim.rendered on a job's end.
+    from app.grpc.clients.billing_client import BillingClient
+    from app.visualization.billing import ManimBilling
+    billing_client = None
+    if config.billing_reserve_manim != "off":
+        billing_client = BillingClient(config.billing_grpc_target, config.billing_service_token.get_secret_value())
+    container.manim_billing = ManimBilling(config.billing_reserve_manim, billing_client, publisher)
+    container.billing_client = billing_client
+    if group_chains is not None:
+        container.catalog_model = lambda provider, model: group_chains.registry.catalog_id(provider, model) or model
+
     # 12. Initialize Kafka Consumer
     request_pipeline = RequestPipeline(
         context_collector=container.context_collector,
@@ -414,6 +425,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if container.kafka_producer:
             try:
                 await container.kafka_producer.stop()
+            except Exception:
+                pass
+        if getattr(container, "billing_client", None):
+            try:
+                await container.billing_client.close()
             except Exception:
                 pass
         # Close gRPC connection pools

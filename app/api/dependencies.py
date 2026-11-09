@@ -36,6 +36,8 @@ class Container:
 
         # Messaging infrastructure (Phase 3)
         self.kafka_producer: KafkaPublisher | None = None
+        self.manim_billing: Any | None = None          # ManimBilling (reserve + artifact.manim.rendered)
+        self.catalog_model: Any | None = None          # (provider, provider_model) -> billing catalog id
         self.kafka_consumer: KafkaConsumerEngine | None = None
 
         # Baseline gRPC Context Providers (Phase 4)

@@ -102,6 +102,12 @@ class LLMServiceConfig(BaseSettings):
     # Shared secret the worker presents when it calls the internal repair endpoint (empty = endpoint trusts the network).
     visualization_internal_token: SecretStr = Field(default=SecretStr(""))
 
+    # Billing (billing integration plan 4.5): Manim renders are reserved with billing-service over gRPC.
+    #   off = no call (default) | shadow = call and log, never block | enforce = a deny stops the render (429/403/402)
+    billing_reserve_manim: Literal["off", "shadow", "enforce"] = "off"
+    billing_grpc_target: str = "localhost:50051"
+    billing_service_token: SecretStr = Field(default=SecretStr(""))
+
     # ---- Context budget (application policy; independent of provider rate limits) ----
     # Max tokens one request's effective context may use (system + history + memory + retrieval + tools + output
     # reserve + safety margin). The model's real window is a second, independent ceiling: both must hold.
