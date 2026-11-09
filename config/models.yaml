@@ -5,6 +5,11 @@
 #   context_window  tokens the model accepts as input
 #   max_output_tokens  the most the adapter asks the model to produce
 #   enabled         false = never routed to (use for any id that is not verified against the provider's docs)
+# Verification (P5b): Claude ids and limits (1M window, 128K output), the OpenAI GPT-6 ids (1.05M window, 922K max input,
+# 128K output) and gemini-2.5-flash(-lite) / gemini-3.1-flash-lite were checked against the providers' current docs.
+# gemini-3.1-pro is NOT a listed API id (the listed one is gemini-3.1-pro-preview, a preview model): it ships disabled
+# until you decide whether a preview model may serve the paid Best group. Gemini context windows are not verified.
+# max_output_tokens is what the adapter asks for, not the model's limit.
 # Group routing order for "Auto" is `group_order` below. The registry only decides WHERE a granted request may go:
 # a request is never sent outside its granted group and never to a higher group.
 models:
@@ -16,25 +21,25 @@ models:
   openai/gpt-oss-120b:
     {provider: groq, provider_model: openai/gpt-oss-120b, group: smart, context_window: 131072, max_output_tokens: 8192, enabled: true}
   claude-haiku-5-5:
-    {provider: anthropic, provider_model: claude-haiku-5-5, group: smart, context_window: 200000, max_output_tokens: 8192, enabled: true}
+    {provider: anthropic, provider_model: claude-haiku-5-5, group: smart, context_window: 1000000, max_output_tokens: 8192, enabled: true}
   gpt-6-luna:
-    {provider: openai, provider_model: gpt-6-luna, group: smart, context_window: 400000, max_output_tokens: 8192, enabled: false}
+    {provider: openai, provider_model: gpt-6-luna, group: smart, context_window: 922000, max_output_tokens: 8192, enabled: true}
   gemini-3.1-flash-lite:
-    {provider: google, provider_model: gemini-3.1-flash-lite, group: smart, context_window: 1048576, max_output_tokens: 8192, enabled: false}
+    {provider: google, provider_model: gemini-3.1-flash-lite, group: smart, context_window: 1048576, max_output_tokens: 8192, enabled: true}
   gemini-2.5-flash:
     {provider: google, provider_model: gemini-2.5-flash, group: smart, context_window: 1048576, max_output_tokens: 8192, enabled: true}
 
   claude-sonnet-5-5:
-    {provider: anthropic, provider_model: claude-sonnet-5-5, group: best, context_window: 200000, max_output_tokens: 8192, enabled: true}
+    {provider: anthropic, provider_model: claude-sonnet-5-5, group: best, context_window: 1000000, max_output_tokens: 8192, enabled: true}
   gpt-6.1-sol:
-    {provider: openai, provider_model: gpt-6.1-sol, group: best, context_window: 400000, max_output_tokens: 8192, enabled: false}
+    {provider: openai, provider_model: gpt-6.1-sol, group: best, context_window: 922000, max_output_tokens: 8192, enabled: true}
   gemini-3.1-pro:
-    {provider: google, provider_model: gemini-3.1-pro, group: best, context_window: 1048576, max_output_tokens: 8192, enabled: false}
+    {provider: google, provider_model: gemini-3.1-pro-preview, group: best, context_window: 1048576, max_output_tokens: 8192, enabled: false}
 
   claude-opus-5-5:
-    {provider: anthropic, provider_model: claude-opus-5-5, group: ultra, context_window: 200000, max_output_tokens: 8192, enabled: true}
+    {provider: anthropic, provider_model: claude-opus-5-5, group: ultra, context_window: 1000000, max_output_tokens: 8192, enabled: true}
   gpt-6-astra:
-    {provider: openai, provider_model: gpt-6-astra, group: ultra, context_window: 400000, max_output_tokens: 8192, enabled: false}
+    {provider: openai, provider_model: gpt-6-astra, group: ultra, context_window: 922000, max_output_tokens: 8192, enabled: true}
 
 # Auto order inside each group (speed first, then cost).
 group_order:

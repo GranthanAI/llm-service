@@ -119,7 +119,13 @@ def build_group_chains(config: Any, context_window_manager: Any, breaker_registr
                                timeout_s=config.groq_timeout_ms / 1000.0, tpm_limit=config.groq_tpm_limit)
         if spec.provider == "google":
             return GeminiAdapter(api_key=keys["google"], model=spec.provider_model)
-        return None  # anthropic / openai adapters arrive in P5b
+        if spec.provider == "anthropic":
+            from app.providers.anthropic import AnthropicAdapter
+            return AnthropicAdapter(api_key=keys["anthropic"], model=spec.provider_model, max_tokens=spec.max_output_tokens)
+        if spec.provider == "openai":
+            from app.providers.openai import OpenAIAdapter
+            return OpenAIAdapter(api_key=keys["openai"], model=spec.provider_model, max_tokens=spec.max_output_tokens)
+        return None
 
     builder = GroupChainBuilder(
         registry, config, context_window_manager, make_adapter, has_credentials,

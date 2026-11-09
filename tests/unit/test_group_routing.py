@@ -123,10 +123,12 @@ def test_a_granted_model_outside_the_granted_group_is_ignored_not_escalated():
 
 
 def test_disabled_models_and_providers_without_credentials_are_skipped():
-    reg = ModelRegistry.load(REGISTRY_FILE)  # gpt-6-luna and gemini-3.1-flash-lite ship disabled until verified
+    reg = ModelRegistry.load(REGISTRY_FILE)  # gemini-3.1-pro-preview ships disabled (not a verified API id)
     chain = reg.chain_for(BillingGrant(granted_group="smart"), lambda p: p != "anthropic")
-    assert "gpt-6-luna" not in ids(chain) and "claude-haiku-5-5" not in ids(chain)
-    assert ids(chain) == ["openai/gpt-oss-120b", "gemini-2.5-flash"]
+    assert "claude-haiku-5-5" not in ids(chain)
+    assert ids(chain) == ["openai/gpt-oss-120b", "gpt-6-luna", "gemini-3.1-flash-lite", "gemini-2.5-flash"]
+    best = reg.chain_for(BillingGrant(granted_group="best"), ALL)
+    assert "gemini-3.1-pro" not in ids(best) and ids(best) == ["claude-sonnet-5-5", "gpt-6.1-sol"]
 
 
 def test_a_group_with_no_usable_model_is_an_empty_chain():
