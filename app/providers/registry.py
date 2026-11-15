@@ -144,15 +144,22 @@ class ModelRegistry:
         or granted_group null). An empty list means the group has no usable model right now.
 
         granted_model set -> it first, then the rest of its group in group_order; Auto -> the group's group_order.
-        Disabled models and providers without credentials are skipped. Never anything outside the granted group."""
+        allowed_models set -> the chain is granted_model (if allowed) then the group's order FILTERED to that list; never
+        anything else. Disabled models and providers without credentials are skipped. Never anything outside the granted
+        group."""
         if grant is None or not grant.granted_group:
             return None
         group = grant.granted_group.strip().lower()
         members = self.group_members(group)
+        if grant.allowed_models is not None:
+            allowed = set(grant.allowed_models)
+            members = [m for m in members if m.id in allowed]
         if grant.granted_model:
             first = self.models.get(grant.granted_model)
             if first is None or first.group != group:
                 logger.warning("granted_model_not_in_group", granted_model=grant.granted_model, group=group)
+            elif first.id not in {m.id for m in members}:
+                logger.warning("granted_model_not_allowed", granted_model=grant.granted_model, group=group)
             else:
                 members = [first] + [m for m in members if m.id != first.id]
         return [m for m in members if self._usable(m, has_credentials)]

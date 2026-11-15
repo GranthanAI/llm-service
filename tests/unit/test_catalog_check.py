@@ -34,7 +34,7 @@ def test_compare_reports_each_kind_of_mismatch():
     catalog = [dict(m) for m in SNAPSHOT]
     problems = compare(catalog, REGISTRY, lambda p: p != "anthropic", lambda spec: spec.id != "gpt-6-luna")
     assert set(problems["no_credentials"]) == {"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"}
-    assert problems["disabled"] == ["gemini-3.1-pro"]                  # shipped disabled: gemini-3.1-pro-preview unverified
+    assert problems["disabled"] == ["gemini-3.1-pro", "gpt-6-astra"]  # shipped disabled: preview id unverified; astra is not offered
     assert problems["no_adapter"] == ["gpt-6-luna"]
     catalog.append({"id": "brand-new", "group": "fast", "provider": "groq", "label": "x", "sort_order": 99})
     catalog[0]["group"] = "ultra"
@@ -54,17 +54,17 @@ async def test_check_once_sets_and_clears_the_gauge_and_survives_billing_being_d
 
     checker = CatalogChecker("http://billing", REGISTRY, lambda p: p != "openai", lambda s: True, fetch=fetch)
     problems = await checker.check_once()
-    assert set(problems["no_credentials"]) == {"gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"}
-    assert CATALOG_MODEL_MISSING.labels(model="gpt-6-astra", reason="no_credentials")._value.get() == 1
+    assert set(problems["no_credentials"]) == {"gpt-6-luna", "gpt-6.1-sol"}
+    assert CATALOG_MODEL_MISSING.labels(model="gpt-6.1-sol", reason="no_credentials")._value.get() == 1
 
     state["down"] = True
     assert await checker.check_once() is None                          # logged, not raised; gauge unchanged
-    assert CATALOG_MODEL_MISSING.labels(model="gpt-6-astra", reason="no_credentials")._value.get() == 1
+    assert CATALOG_MODEL_MISSING.labels(model="gpt-6.1-sol", reason="no_credentials")._value.get() == 1
 
     state["down"] = False
     checker.has_credentials = lambda p: True                           # the key was added: next cycle clears it
     await checker.check_once()
-    assert CATALOG_MODEL_MISSING.labels(model="gpt-6-astra", reason="no_credentials")._value.get() == 0
+    assert CATALOG_MODEL_MISSING.labels(model="gpt-6.1-sol", reason="no_credentials")._value.get() == 0
 
 
 async def test_the_loop_never_blocks_start_and_stop_is_clean():

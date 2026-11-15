@@ -305,3 +305,56 @@ def test_registry_output_limits_are_capped_by_the_service_settings_so_a_free_tie
     cfg = LLMServiceConfig(groq_tpm_limit=8000)                                # the free-tier cap that used to give -392
     budget = resolve_context_budget(cfg, "groq", spec.provider_model, group_limits(spec), requested_output_tokens=spec.max_output_tokens)
     assert budget.input_budget > 0
+
+
+# --- L2: allowed_models keeps the chain inside the plan ---------------------------------------------------------------
+
+FREE_SMART = ["openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna"]
+SMART_ADAPTERS = ("openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.1-flash-lite", "gemini-2.5-flash")
+
+
+def test_allowed_models_filter_the_group_order_and_the_granted_model_leads():
+    grant = BillingGrant(granted_group="smart", granted_model="claude-haiku-5-5", allowed_models=FREE_SMART)
+    assert ids(registry().chain_for(grant, ALL)) == ["claude-haiku-5-5", "openai/gpt-oss-120b", "gpt-6-luna"]
+
+
+def test_a_granted_model_the_plan_does_not_allow_is_not_tried():
+    grant = BillingGrant(granted_group="smart", granted_model="gemini-2.5-flash", allowed_models=FREE_SMART)
+    assert ids(registry().chain_for(grant, ALL)) == FREE_SMART
+
+
+def test_allowed_models_absent_is_unchanged_and_empty_after_filtering_is_an_empty_chain():
+    assert ids(registry().chain_for(BillingGrant(granted_group="smart"), ALL)) == DEFAULT_GROUP_ORDER["smart"]
+    assert registry().chain_for(BillingGrant(granted_group="best", allowed_models=[]), ALL) == []
+    assert registry().chain_for(BillingGrant(granted_group="best", allowed_models=["gpt-6-luna"]), ALL) == []  # other group
+
+
+async def test_free_user_on_haiku_failing_falls_back_only_to_plan_models(monkeypatch):
+    adapters = {i: FakeAdapter(i, fail=True) for i in SMART_ADAPTERS}
+    adapters["gpt-6-luna"] = FakeAdapter("luna")
+    monkeypatch.setattr("app.providers.group_chain.build_group_fitter", lambda *a, **k: (lambda p, n, e: p))
+    chain = builder(adapters).build(
+        BillingGrant(granted_group="smart", granted_model="claude-haiku-5-5", allowed_models=FREE_SMART))
+    params: dict = {}
+    assert [t async for t in chain.generate_stream(prompt(), params)] == ["hi"]
+    assert params["_route"]["model_id"] == "gpt-6-luna"
+    assert adapters["claude-haiku-5-5"].calls == 1 and adapters["openai/gpt-oss-120b"].calls == 1
+    assert adapters["gemini-2.5-flash"].calls == 0 and adapters["gemini-3.1-flash-lite"].calls == 0   # never outside the plan
+
+
+async def test_downgraded_advanced_case_chains_only_the_plans_smart_models(monkeypatch):
+    adapters = {i: FakeAdapter(i, fail=True) for i in SMART_ADAPTERS}
+    adapters["claude-sonnet-5-5"] = FakeAdapter("sonnet")
+    monkeypatch.setattr("app.providers.group_chain.build_group_fitter", lambda *a, **k: (lambda p, n, e: p))
+    chain = builder(adapters).build(BillingGrant(granted_group="smart", granted_model="claude-sonnet-5-5",
+                                                 downgraded=True, allowed_models=FREE_SMART))
+    with pytest.raises(AllProvidersFailedError):
+        await drain(chain)
+    assert [adapters[m].calls for m in FREE_SMART] == [1, 1, 1]
+    assert adapters["claude-sonnet-5-5"].calls == 0 and adapters["gemini-2.5-flash"].calls == 0
+
+
+def test_an_empty_allowed_list_raises_so_billing_releases_the_hold():
+    with pytest.raises(AllProvidersFailedError, match="granted group"):
+        builder({i: FakeAdapter(i) for i in DEFAULT_GROUP_ORDER["best"]}).build(
+            BillingGrant(granted_group="best", allowed_models=[]))

@@ -21,3 +21,6 @@ class BillingGrant(BaseModel):
     funded_by: Literal["plan", "credits"] | None = None
     downgraded: bool = False
     enforcement: Literal["enforce", "shadow", "degraded"] | None = None
+    # The catalog ids the user's plan allows INSIDE granted_group. When present the chain never leaves this list;
+    # absent (older conversation-service, billing off, credits) = the whole group, as before.
+    allowed_models: list[str] | None = None
