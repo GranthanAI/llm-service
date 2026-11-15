@@ -105,7 +105,8 @@ def resolve_context_budget(
     if config.prompt_token_budget and config.prompt_token_budget < input_budget:
         input_budget, legacy = config.prompt_token_budget, True
     # Request-level cap (billing's max_context_tokens for this grant): one more ceiling, never a floor.
-    if input_cap and input_cap < input_budget:
+    # None, 0 and -1 mean "no cap from billing" (Pay as you Go reads the model's full window): only a positive value caps.
+    if input_cap is not None and input_cap > 0 and input_cap < input_budget:
         input_budget = input_cap
     if input_budget < MIN_INPUT_TOKENS:
         raise ContextBudgetError(
