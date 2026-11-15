@@ -109,6 +109,8 @@ class LLMServiceConfig(BaseSettings):
     # billing-service REST base URL, for the model catalog check (GET /billing/v1/models, every 10 minutes).
     billing_service_url: str = "http://billing-api:8080"
     billing_service_token: SecretStr = Field(default=SecretStr(""))
+    # Token billing-service presents (X-Service-Token) to GET /internal/models/availability. Empty = the route refuses.
+    internal_service_token: SecretStr = Field(default=SecretStr(""))
 
     # ---- Context budget (application policy; independent of provider rate limits) ----
     # Max tokens one request's effective context may use (system + history + memory + retrieval + tools + output
