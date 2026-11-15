@@ -12,6 +12,7 @@ from google import genai
 from google.genai import types
 
 from app.config.logging import get_logger
+from app.utils.rate_limit import retry_after_of
 from app.exceptions.provider import (
     ProviderError,
     ProviderRateLimitError,
@@ -198,7 +199,7 @@ class GeminiAdapter(BaseProviderAdapter):
         err_msg = str(e)
         self.logger.error("Gemini generation failed", error=err_msg)
         if "429" in err_msg or "resource exhausted" in err_msg.lower():
-            raise ProviderRateLimitError(f"Gemini Rate Limit: {err_msg}", provider="gemini") from e
+            raise ProviderRateLimitError(f"Gemini Rate Limit: {err_msg}", provider="gemini", retry_after_seconds=retry_after_of(e)) from e
         if "timeout" in err_msg.lower() or "deadline exceeded" in err_msg.lower():
             raise ProviderTimeoutError(f"Gemini Timeout: {err_msg}", provider="gemini") from e
         raise ProviderError(f"Gemini Error: {err_msg}", provider="gemini") from e

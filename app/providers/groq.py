@@ -14,6 +14,7 @@ import structlog
 from groq import AsyncGroq
 
 from app.config.logging import get_logger
+from app.utils.rate_limit import retry_after_of
 from app.exceptions.provider import (
     ProviderError,
     ProviderRateLimitError,
@@ -312,7 +313,7 @@ class GroqAdapter(BaseProviderAdapter):
         if is_context_limit_error(e):
             raise ProviderError(f"Groq rejected the request size (context limit): {err_msg[:200]}", provider="groq") from e
         if "429" in err_msg or "rate limit" in err_msg.lower():
-            raise ProviderRateLimitError(f"Groq Rate Limit: {err_msg}", provider="groq") from e
+            raise ProviderRateLimitError(f"Groq Rate Limit: {err_msg}", provider="groq", retry_after_seconds=retry_after_of(e)) from e
         if "timeout" in err_msg.lower() or "timed out" in err_msg.lower():
             raise ProviderTimeoutError(f"Groq Timeout: {err_msg}", provider="groq") from e
         raise ProviderError(f"Groq Error: {err_msg}", provider="groq") from e

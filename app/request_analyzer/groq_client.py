@@ -11,6 +11,7 @@ from groq import AsyncGroq
 
 from app.config.logging import get_logger
 from app.providers.usage_hook import report_usage
+from app.utils.rate_limit import retry_after_of
 from app.exceptions.provider import (
     ProviderError,
     ProviderRateLimitError,
@@ -70,7 +71,7 @@ class GroqAnalysisClient:
         except groq.RateLimitError as exc:
             self.logger.warning("Groq rate limit exceeded", error=str(exc))
             raise ProviderRateLimitError(
-                "Groq rate limit exceeded", provider="groq", status_code=429
+                "Groq rate limit exceeded", provider="groq", retry_after_seconds=retry_after_of(exc)
             ) from exc
         except (groq.APITimeoutError, TimeoutError) as exc:
             self.logger.warning(

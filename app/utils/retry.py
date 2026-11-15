@@ -15,6 +15,7 @@ from app.config.logging import get_logger
 from app.exceptions.base import RetriableError
 from app.exceptions.grpc import GRPCUnavailableError
 from app.exceptions.provider import ProviderRateLimitError, ProviderTimeoutError
+from app.utils.rate_limit import MAX_RATE_LIMIT_WAIT_SECONDS
 
 
 class RetryPolicy(BaseModel):
@@ -136,6 +137,24 @@ class RetryManager:
                         exc_type=type(exc).__name__,
                     )
                     raise
+
+                # A provider that says when its limit clears is believed, up to a bound: wait exactly that (never more
+                # than MAX_RATE_LIMIT_WAIT_SECONDS), and when it asks for longer, fail now instead of holding the request.
+                asked = getattr(exc, "retry_after_seconds", None) if isinstance(exc, ProviderRateLimitError) else None
+                if asked is not None:
+                    if asked > MAX_RATE_LIMIT_WAIT_SECONDS:
+                        self.logger.warning(
+                            "Rate limit wait exceeds the cap; failing the call",
+                            operation=operation_name, provider=provider, asked_seconds=round(asked, 2),
+                            cap_seconds=MAX_RATE_LIMIT_WAIT_SECONDS,
+                        )
+                        raise
+                    self.logger.info(
+                        "Waiting for the provider's rate limit to clear",
+                        operation=operation_name, provider=provider, attempt=attempt, delay_seconds=round(asked, 3),
+                    )
+                    await asyncio.sleep(max(0.01, asked))
+                    continue
 
                 # Calculate backoff delay with exponential backoff and ±10% jitter (LLD Section 22.5)
                 base_delay = min(

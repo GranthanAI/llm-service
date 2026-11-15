@@ -16,6 +16,7 @@ import structlog
 from anthropic import AsyncAnthropic
 
 from app.config.logging import get_logger
+from app.utils.rate_limit import retry_after_of
 from app.exceptions.provider import ProviderError, ProviderRateLimitError, ProviderTimeoutError
 from app.providers.base import TRUNCATION_NOTICE, BaseProviderAdapter
 from app.providers.groq import MAX_RATE_LIMIT_WAIT_S, rate_limit_wait_s
@@ -196,9 +197,9 @@ class AnthropicAdapter(BaseProviderAdapter):
         name = type(e).__name__
         status = getattr(e, "status_code", None)
         if status == 429 or name == "RateLimitError" or "429" in err or "rate limit" in err.lower():
-            raise ProviderRateLimitError(f"Anthropic Rate Limit: {err}", provider="anthropic") from e
+            raise ProviderRateLimitError(f"Anthropic Rate Limit: {err}", provider="anthropic", retry_after_seconds=retry_after_of(e)) from e
         if name in ("APITimeoutError", "TimeoutError") or "timeout" in err.lower() or "timed out" in err.lower():
             raise ProviderTimeoutError(f"Anthropic Timeout: {err}", provider="anthropic") from e
         if status == 529 or name == "OverloadedError" or "overloaded" in err.lower():
-            raise ProviderRateLimitError(f"Anthropic overloaded: {err}", provider="anthropic") from e
+            raise ProviderRateLimitError(f"Anthropic overloaded: {err}", provider="anthropic", retry_after_seconds=retry_after_of(e)) from e
         raise ProviderError(f"Anthropic Error: {err}", provider="anthropic", status_code=status) from e

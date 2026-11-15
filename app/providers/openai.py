@@ -16,6 +16,7 @@ import structlog
 from openai import AsyncOpenAI
 
 from app.config.logging import get_logger
+from app.utils.rate_limit import retry_after_of
 from app.exceptions.provider import ProviderError, ProviderRateLimitError, ProviderTimeoutError
 from app.providers.base import TRUNCATION_NOTICE, BaseProviderAdapter
 from app.providers.groq import MAX_RATE_LIMIT_WAIT_S, is_context_limit_error, rate_limit_wait_s
@@ -163,7 +164,7 @@ class OpenAIAdapter(BaseProviderAdapter):
         if is_context_limit_error(e):
             raise ProviderError(f"OpenAI rejected the request size (context limit): {err[:200]}", provider="openai") from e
         if status == 429 or name == "RateLimitError" or "429" in err or "rate limit" in err.lower():
-            raise ProviderRateLimitError(f"OpenAI Rate Limit: {err}", provider="openai") from e
+            raise ProviderRateLimitError(f"OpenAI Rate Limit: {err}", provider="openai", retry_after_seconds=retry_after_of(e)) from e
         if name in ("APITimeoutError", "TimeoutError") or "timeout" in err.lower() or "timed out" in err.lower():
             raise ProviderTimeoutError(f"OpenAI Timeout: {err}", provider="openai") from e
         raise ProviderError(f"OpenAI Error: {err}", provider="openai", status_code=status) from e

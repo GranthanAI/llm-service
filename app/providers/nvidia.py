@@ -11,6 +11,7 @@ import structlog
 from openai import AsyncOpenAI
 
 from app.config.logging import get_logger
+from app.utils.rate_limit import retry_after_of
 from app.exceptions.provider import (
     ProviderError,
     ProviderRateLimitError,
@@ -172,7 +173,7 @@ class NVIDIAAdapter(BaseProviderAdapter):
         err_msg = str(e)
         self.logger.error("NVIDIA generation failed", error=err_msg)
         if "429" in err_msg or "rate limit" in err_msg.lower():
-            raise ProviderRateLimitError(f"NVIDIA Rate Limit: {err_msg}", provider="nvidia") from e
+            raise ProviderRateLimitError(f"NVIDIA Rate Limit: {err_msg}", provider="nvidia", retry_after_seconds=retry_after_of(e)) from e
         if "timeout" in err_msg.lower() or "timed out" in err_msg.lower():
             raise ProviderTimeoutError(f"NVIDIA Timeout: {err_msg}", provider="nvidia") from e
         raise ProviderError(f"NVIDIA Error: {err_msg}", provider="nvidia") from e
