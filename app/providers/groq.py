@@ -227,8 +227,10 @@ class GroqAdapter(BaseProviderAdapter):
 
     def _estimate(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> int:
         """Tokens this call will count against the minute: the prompt plus the output it asks for."""
-        max_tokens = params.get("_max_tokens") or output_budget(int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit)
-        return estimate_prompt_tokens(messages) + max_tokens
+        max_tokens = output_budget(int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit)
+        from app.providers.groq_budget import estimate_tokens
+
+        return estimate_tokens(estimate_prompt_tokens(messages), max_tokens, getattr(self.budget, "output_estimate", 600))
 
     async def budget_wait(self, messages: list[dict[str, Any]], params: dict[str, Any] | None = None) -> float:
         """Seconds until this answer fits this model's shared budget (0.0 = it fits and is claimed). The chain calls this
@@ -236,17 +238,11 @@ class GroqAdapter(BaseProviderAdapter):
         params = params if params is not None else {}
         if self.budget is None:
             return 0.0
-        # Groq admits a request against prompt + max_tokens, so ask for as much output as the bucket has left (not more than
-        # wanted), but never less than MIN_OUTPUT_TOKENS: below that the model is skipped / waited for instead.
-        prompt = estimate_prompt_tokens(messages)
-        want = output_budget(int(params.get("max_tokens", 0) or 0), prompt, self.tpm_limit)
-        left = await self.budget.available(self.model_name, "answer")
-        out = want if left is None else max(min(want, left - prompt - 100), MIN_OUTPUT_TOKENS)
-        params["_max_tokens"] = out
-        wait = await self.budget.acquire(self.model_name, prompt + out, "answer")
+        estimate = self._estimate(messages, params)   # input + min(max_tokens, 600): Groq does not count the full max_tokens
+        wait = await self.budget.acquire(self.model_name, estimate, "answer")
         if wait <= 0:
             params["_budget_claimed"] = self.model_name
-            params["_budget_estimate"] = prompt + out
+            params["_budget_estimate"] = estimate
         return wait
 
     async def stream(
@@ -260,7 +256,7 @@ class GroqAdapter(BaseProviderAdapter):
         temperature = params.get("temperature", 0.7)
         # gpt-oss counts its reasoning tokens inside the same budget as the visible answer, so the limit
         # passed down for another provider is a floor, never a ceiling, for this adapter.
-        max_tokens = params.get("_max_tokens") or output_budget(
+        max_tokens = output_budget(
             int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit
         )
         extra: dict[str, Any] = {"reasoning_effort": "low"} if model.startswith("openai/gpt-oss") else {}

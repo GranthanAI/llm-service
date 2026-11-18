@@ -61,7 +61,7 @@ class LLMServiceConfig(BaseSettings):
     groq_tpm_limit: int = 8000
     # Shared per-model Groq token budget (also used by memory-service): the same Redis in both. Empty = in-process window only.
     groq_budget_redis_url: str = "redis://127.0.0.1:6379/0"
-    groq_answer_reserve_tokens: int = 4000      # tokens analysis and memory jobs must leave for answers
+    groq_output_estimate_tokens: int = 600      # expected output of a call before Groq's headers are known (never the full max_tokens)
     groq_analysis_max_tokens: int = 512
     # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
     # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input

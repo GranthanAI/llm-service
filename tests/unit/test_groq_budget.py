@@ -82,7 +82,7 @@ async def test_headers_are_parsed_and_stored_with_the_reset_as_ttl():
 
 
 async def test_known_headers_decide_and_the_claim_is_deducted_for_everyone():
-    b = GroqBudget(FakeRedis(), answer_reserve=4000)
+    b = GroqBudget(FakeRedis())
     await b.record_headers(M20, headers(6000, "20s"))
     assert await b.acquire(M20, 3000, "answer") == 0.0          # an answer may use the whole bucket
     assert (await b.known_remaining(M20))[0] == 3000            # and the next caller sees what is left
@@ -90,17 +90,47 @@ async def test_known_headers_decide_and_the_claim_is_deducted_for_everyone():
     assert 0 < wait <= 20                                       # does not fit: wait for the reset
 
 
-async def test_the_answer_reserve_is_respected_by_analysis_and_memory():
-    b = GroqBudget(FakeRedis(), answer_reserve=4000)
-    await b.record_headers(M20, headers(5000, "30s"))
-    assert await b.acquire(M20, 1500, "analysis") > 0           # 5000 - 1500 < 4000: leaves too little for an answer
-    assert await b.acquire(M20, 1000, "memory") == 0.0          # 5000 - 1000 >= 4000
-    assert await b.acquire(M20, 3500, "answer") == 0.0          # the answer still fits what is left (4000)
+async def test_there_is_no_fixed_reserve_every_purpose_may_use_what_groq_says_is_left():
+    b = GroqBudget(FakeRedis())
+    await b.record_headers(M20, headers(2500, "30s"))
+    assert await b.acquire(M20, 1500, "analysis") == 0.0        # nothing is held back for answers
+    assert await b.acquire(M20, 900, "memory") == 0.0
+    wait = await b.acquire(M20, 500, "answer")                  # 100 left: it does not fit, and the wait is Groq's reset
+    assert 25 <= wait <= 31
+
+
+async def test_the_wait_is_groqs_reset_time_not_a_full_minute_guess():
+    b = GroqBudget(FakeRedis())
+    await b.record_headers(M20, headers(100, "7.5s"))
+    wait = await b.acquire(M20, 3000, "answer")
+    assert 7 <= wait <= 8.5
+
+
+async def test_a_429s_retry_after_blocks_that_model_until_then():
+    r = FakeRedis()
+    b = GroqBudget(r)
+    await b.record_headers(M20, {"retry-after": "12", "x-ratelimit-remaining-tokens": "5000", "x-ratelimit-reset-tokens": "9s"})
+    wait = await b.acquire(M20, 10, "answer")                   # plenty of tokens, but Groq said come back in 12 s
+    assert 11 <= wait <= 12
+    assert await b.acquire(M120, 10, "answer") == 0.0           # another model's bucket is separate
+    r.kv.pop(f"groq:budget:{M20}:retry")                        # the retry-after elapsed
+    assert await b.acquire(M20, 10, "answer") == 0.0
+
+
+async def test_the_local_estimate_uses_a_realistic_output_not_the_full_max_tokens():
+    from app.providers.groq_budget import estimate_tokens
+    assert estimate_tokens(3367, 2048) == 3367 + 600            # not 3367 + 2048
+    assert estimate_tokens(3367, 300) == 3367 + 300             # a smaller max_tokens still wins
+    assert estimate_tokens(3367, 2048, 800) == 3367 + 800       # GROQ_OUTPUT_ESTIMATE_TOKENS
+    adapter = GroqAdapter(api_key="k", model=M120, tpm_limit=0, client=MagicMock(), budget=GroqBudget(FakeRedis()))
+    msgs = [{"role": "user", "content": "word " * 1900}]
+    from app.providers.groq import estimate_prompt_tokens
+    assert adapter._estimate(msgs, {"max_tokens": 2048}) == estimate_prompt_tokens(msgs) + 600
 
 
 async def test_without_headers_a_sliding_window_against_the_tpm_limit_is_used():
     now = [1000.0]
-    b = GroqBudget(FakeRedis(), tpm_limit=8000, answer_reserve=4000, clock=lambda: now[0])
+    b = GroqBudget(FakeRedis(), tpm_limit=8000, clock=lambda: now[0])
     assert await b.acquire(M20, 5000, "answer") == 0.0
     wait = await b.acquire(M20, 5000, "answer")
     assert wait == pytest.approx(60.0)                          # the first claim leaves the window in 60 s
@@ -225,8 +255,8 @@ async def test_the_adapter_reports_a_short_budget_instead_of_calling_groq():
 
 
 async def test_analysis_is_skipped_not_blocking_when_the_bucket_is_short():
-    b = GroqBudget(FakeRedis(), answer_reserve=4000)
-    await b.record_headers(M20, headers(4200, "30s"))           # an analysis (~1.5k + 512) would leave < 4000
+    b = GroqBudget(FakeRedis())
+    await b.record_headers(M20, headers(300, "30s"))            # an analysis (input + 512) does not fit
     fake_groq = MagicMock()
     fake_groq.chat.completions.create = AsyncMock(side_effect=AssertionError("analysis must not call Groq"))
     client = GroqAnalysisClient("k", model=M20, client=fake_groq, budget=b, max_tokens=512)
@@ -260,7 +290,7 @@ async def test_analysis_asks_for_512_tokens():
 
 async def test_a_finished_answer_is_charged_what_it_used_not_prompt_plus_max_tokens():
     now = [1000.0]
-    b = GroqBudget(FakeRedis(), tpm_limit=8000, answer_reserve=4000, clock=lambda: now[0])
+    b = GroqBudget(FakeRedis(), tpm_limit=8000, clock=lambda: now[0])
     assert await b.acquire(M120, 7900, "answer") == 0.0            # prompt 2.5k + a 5.4k max_tokens ask: the whole bucket
     assert await b.acquire(M120, 3000, "answer") > 0               # while it runs nothing else fits
     await b.settle_window(M120, 7900, 1300)                         # it finished having used 1,300
@@ -268,22 +298,22 @@ async def test_a_finished_answer_is_charged_what_it_used_not_prompt_plus_max_tok
     assert await b.available(M120, "answer") == 8000 - 1300 - 3000
 
 
-async def test_the_adapter_asks_for_the_output_that_fits_what_is_left():
+async def test_the_adapter_claims_input_plus_a_realistic_output_and_keeps_max_tokens_untouched():
     now = [1000.0]
-    b = GroqBudget(FakeRedis(), tpm_limit=8000, answer_reserve=4000, clock=lambda: now[0])
+    b = GroqBudget(FakeRedis(), tpm_limit=8000, clock=lambda: now[0])
     await b.record_headers(M120, headers(4500, "40s"))
     adapter = GroqAdapter(api_key="k", model=M120, tpm_limit=8000, client=MagicMock(), budget=b)
     params = {}
-    msgs = [{"role": "user", "content": "word " * 1900}]            # roughly a 2.5k-token prompt
-    assert await adapter.budget_wait(msgs, params) == 0.0
-    assert 1024 <= params["_max_tokens"] < 4096                     # shrunk to fit 4,500, not the usual 4,096+ ask
+    msgs = [{"role": "user", "content": "word " * 1900}]
     from app.providers.groq import estimate_prompt_tokens
-    assert estimate_prompt_tokens(msgs) + params["_max_tokens"] <= 4500
-    assert params["_budget_estimate"] == estimate_prompt_tokens(msgs) + params["_max_tokens"]
+    assert await adapter.budget_wait(msgs, params) == 0.0
+    assert params["_budget_estimate"] == estimate_prompt_tokens(msgs) + 600
+    assert "_max_tokens" not in params                               # model selection / max_tokens behaviour unchanged
+    assert (await b.known_remaining(M120))[0] == 4500 - params["_budget_estimate"]
 
 
-async def test_when_even_the_minimum_output_does_not_fit_the_model_is_skipped():
+async def test_when_the_estimate_does_not_fit_the_model_is_skipped_for_groqs_reset():
     b = GroqBudget(FakeRedis(), tpm_limit=8000)
-    await b.record_headers(M120, headers(2600, "25s"))
+    await b.record_headers(M120, headers(1500, "25s"))
     adapter = GroqAdapter(api_key="k", model=M120, tpm_limit=8000, client=MagicMock(), budget=b)
     assert await adapter.budget_wait([{"role": "user", "content": "word " * 1900}], {}) > 0

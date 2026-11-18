@@ -54,7 +54,9 @@ class GroqAnalysisClient:
             return 0
         from app.providers.groq import estimate_prompt_tokens
 
-        estimate = estimate_prompt_tokens(messages) + self.max_tokens
+        from app.providers.groq_budget import estimate_tokens
+
+        estimate = estimate_tokens(estimate_prompt_tokens(messages), self.max_tokens, getattr(self.budget, "output_estimate", 600))
         wait = await self.budget.acquire(self.model, estimate, "analysis")
         if wait > 0:
             raise AnalysisBudgetSkipped(f"{self.model} budget short for {wait:.0f}s")

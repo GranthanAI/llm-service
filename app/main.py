@@ -166,7 +166,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     groq_key = config.groq_api_key.get_secret_value() if config.groq_api_key else ""
     from app.providers.groq_budget import budget_from_settings
 
-    groq_budget = budget_from_settings(config.groq_budget_redis_url, config.groq_tpm_limit, config.groq_answer_reserve_tokens)
+    groq_budget = budget_from_settings(config.groq_budget_redis_url, config.groq_tpm_limit)
+    groq_budget.output_estimate = config.groq_output_estimate_tokens
     container.groq_budget = groq_budget
 
     def _analysis_client(model: str) -> GroqAnalysisClient:
