@@ -19,6 +19,10 @@ from app.exceptions.provider import (
 )
 
 
+class AnalysisBudgetSkipped(Exception):
+    """The model's Groq budget cannot take an analysis call without eating the answer reserve: skip analysis."""
+
+
 class GroqAnalysisClient:
     """
     Dedicated client for ultra-low-latency planning inference via Groq.
@@ -32,22 +36,42 @@ class GroqAnalysisClient:
         timeout_ms: int = 3000,
         client: AsyncGroq | None = None,
         logger: structlog.stdlib.BoundLogger | None = None,
+        budget: Any = None,
+        max_tokens: int = 512,
     ):
+        self.budget = budget
+        self.max_tokens = max_tokens
         self.api_key: str = api_key
         self.model: str = model
         self.timeout_ms: int = timeout_ms
         self._client: AsyncGroq = client or AsyncGroq(api_key=api_key)
         self.logger = logger or get_logger("groq_analysis_client")
 
+    async def reserve(self, messages: list[dict[str, str]]) -> int:
+        """Claim this call's tokens from the shared budget BEFORE it runs (outside the circuit breaker, so a skip is not a
+        failure). Raises AnalysisBudgetSkipped when the call would eat the answer reserve; returns the claimed estimate."""
+        if self.budget is None:
+            return 0
+        from app.providers.groq import estimate_prompt_tokens
+
+        estimate = estimate_prompt_tokens(messages) + self.max_tokens
+        wait = await self.budget.acquire(self.model, estimate, "analysis")
+        if wait > 0:
+            raise AnalysisBudgetSkipped(f"{self.model} budget short for {wait:.0f}s")
+        return estimate
+
     async def complete(
         self,
         messages: list[dict[str, str]],
         response_format: dict[str, Any] | None = None,
         temperature: float = 0.1,
+        estimate: int | None = None,
     ) -> str:
         """Execute chat completion in JSON mode against Groq."""
         fmt = response_format or {"type": "json_object"}
         timeout_sec = self.timeout_ms / 1000.0
+        if estimate is None:  # called without reserve(): claim here
+            estimate = await self.reserve(messages)
 
         try:
             response = await self._client.chat.completions.create(
@@ -55,8 +79,11 @@ class GroqAnalysisClient:
                 messages=messages,  # type: ignore[arg-type]
                 temperature=temperature,
                 response_format=fmt,
+                max_tokens=self.max_tokens,
                 timeout=timeout_sec,
             )
+            if self.budget is not None and getattr(response, "usage", None) is not None:
+                await self.budget.settle(self.model, estimate, int(getattr(response.usage, "total_tokens", estimate) or estimate))
 
             usage = getattr(response, "usage", None)
             report_usage(
@@ -69,6 +96,8 @@ class GroqAnalysisClient:
 
             return content
         except groq.RateLimitError as exc:
+            if self.budget is not None:
+                await self.budget.record_error(self.model, exc)
             self.logger.warning("Groq rate limit exceeded", error=str(exc))
             raise ProviderRateLimitError(
                 "Groq rate limit exceeded", provider="groq", retry_after_seconds=retry_after_of(exc)

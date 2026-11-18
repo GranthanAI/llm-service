@@ -59,6 +59,10 @@ class LLMServiceConfig(BaseSettings):
     # gpt-oss-20b allows 8000, so a request must fit in it or it is rejected (HTTP 429) before generating a
     # single token. 0 disables the cap (paid tiers).
     groq_tpm_limit: int = 8000
+    # Shared per-model Groq token budget (also used by memory-service): the same Redis in both. Empty = in-process window only.
+    groq_budget_redis_url: str = "redis://127.0.0.1:6379/0"
+    groq_answer_reserve_tokens: int = 4000      # tokens analysis and memory jobs must leave for answers
+    groq_analysis_max_tokens: int = 512
     # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
     # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input
     # tokens/min on qwen): the prompt AND the answer must both fit. 0 = no cap (model's full window).

@@ -144,6 +144,7 @@ class GroqAdapter(BaseProviderAdapter):
         timeout_s: float = 5.0,
         tpm_limit: int = 0,
         client: AsyncGroq | None = None,
+        budget: Any = None,
         logger_instance: structlog.stdlib.BoundLogger | None = None,
     ):
         super().__init__(provider_name="groq", model_name=model)
@@ -151,6 +152,7 @@ class GroqAdapter(BaseProviderAdapter):
         self.timeout_s = timeout_s
         # Per-request tokens-per-minute ceiling of the account's Groq tier (0 = unlimited).
         self.tpm_limit = tpm_limit
+        self.budget = budget  # shared per-model token budget (groq_budget.GroqBudget) or None
         # max_retries=0: the SDK would silently back off and retry 429s, hiding a stall from the router's
         # deadlines. Rate limits are handled explicitly in `stream`.
         self.client = client or AsyncGroq(
@@ -223,6 +225,22 @@ class GroqAdapter(BaseProviderAdapter):
             except Exception as e:
                 self._handle_exception(e)
 
+    def _estimate(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> int:
+        """Tokens this call will count against the minute: the prompt plus the output it asks for."""
+        max_tokens = output_budget(int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit)
+        return estimate_prompt_tokens(messages) + max_tokens
+
+    async def budget_wait(self, messages: list[dict[str, Any]], params: dict[str, Any] | None = None) -> float:
+        """Seconds until this answer fits this model's shared budget (0.0 = it fits and is claimed). The chain calls this
+        first so it can move to the next model instead of waiting."""
+        params = params if params is not None else {}
+        if self.budget is None:
+            return 0.0
+        wait = await self.budget.acquire(self.model_name, self._estimate(messages, params), "answer")
+        if wait <= 0:
+            params["_budget_claimed"] = self.model_name
+        return wait
+
     async def stream(
         self,
         messages: list[dict[str, Any]],
@@ -238,6 +256,13 @@ class GroqAdapter(BaseProviderAdapter):
             int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit
         )
         extra: dict[str, Any] = {"reasoning_effort": "low"} if model.startswith("openai/gpt-oss") else {}
+        claimed = self.budget is None or params.get("_budget_claimed") == model
+        if not claimed:  # called outside the chain (legacy order): claim here, wait only for a short gap
+            gap = await self.budget.acquire(model, self._estimate(messages, params), "answer")
+            if gap > MAX_RATE_LIMIT_WAIT_S:
+                raise ProviderRateLimitError(f"Groq budget for {model} is short for {gap:.0f}s", provider="groq", retry_after_seconds=gap)
+            if gap > 0:
+                await asyncio.sleep(gap + 0.1)
 
         with self.tracer.start_as_current_span("groq.stream") as span:
             span.set_attribute("provider", "groq")
@@ -260,6 +285,8 @@ class GroqAdapter(BaseProviderAdapter):
                     )
                     truncated = False
                     usage = None
+                    if self.budget is not None:  # the real remaining tokens, for every other caller of this model
+                        await self.budget.record_headers(model, getattr(getattr(stream_resp, "response", None), "headers", None))
                     attempt_text.clear()
                     async for chunk in stream_resp:
                         # usage arrives on the final chunk: `usage`, or `x_groq.usage`
@@ -281,6 +308,8 @@ class GroqAdapter(BaseProviderAdapter):
                         yield TRUNCATION_NOTICE
                     return
                 except Exception as e:
+                    if self.budget is not None:
+                        await self.budget.record_error(model, e)
                     if attempt_text:
                         # an answer that died midway still consumed tokens the provider will bill: estimate them
                         report_usage(params, provider="groq", model=model, input_tokens=None, output_tokens=None,

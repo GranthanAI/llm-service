@@ -100,7 +100,7 @@ class GroupChainBuilder:
         return ms / 1000.0 or None
 
 
-def build_group_chains(config: Any, context_window_manager: Any, breaker_registry: Any) -> GroupChainBuilder:
+def build_group_chains(config: Any, context_window_manager: Any, breaker_registry: Any, groq_budget: Any = None) -> GroupChainBuilder:
     """Loads config/models.yaml (MODEL_REGISTRY_FILE) and wires one adapter per catalog model. Raises RegistryError on
     an invalid or missing registry: a service that cannot honour a billing grant must not start."""
     from app.providers.gemini import GeminiAdapter
@@ -121,7 +121,7 @@ def build_group_chains(config: Any, context_window_manager: Any, breaker_registr
     def make_adapter(spec: ModelSpec) -> BaseProviderAdapter | None:
         if spec.provider == "groq":
             return GroqAdapter(api_key=keys["groq"], model=spec.provider_model,
-                               timeout_s=config.groq_timeout_ms / 1000.0, tpm_limit=config.groq_tpm_limit)
+                               timeout_s=config.groq_timeout_ms / 1000.0, tpm_limit=config.groq_tpm_limit, budget=groq_budget)
         if spec.provider == "google":
             return GeminiAdapter(api_key=keys["google"], model=spec.provider_model)
         if spec.provider == "anthropic":

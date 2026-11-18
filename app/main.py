@@ -164,6 +164,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         max_tokens=config.nvidia_max_tokens,
     )
     groq_key = config.groq_api_key.get_secret_value() if config.groq_api_key else ""
+    from app.providers.groq_budget import budget_from_settings
+
+    groq_budget = budget_from_settings(config.groq_budget_redis_url, config.groq_tpm_limit, config.groq_answer_reserve_tokens)
+    container.groq_budget = groq_budget
 
     def _analysis_client(model: str) -> GroqAnalysisClient:
         # max_retries=0: a rate-limited Groq model must fail fast so the next one is tried, not back off silently.
@@ -172,6 +176,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             model=model,
             timeout_ms=config.groq_timeout_ms,
             client=AsyncGroq(api_key=groq_key or "not-set", max_retries=0),
+            budget=groq_budget,
+            max_tokens=config.groq_analysis_max_tokens,
         )
 
     groq_client = _analysis_client(config.groq_model)
@@ -253,6 +259,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model=config.groq_model,
         timeout_s=config.groq_timeout_ms / 1000.0,
         tpm_limit=config.groq_tpm_limit,
+        budget=groq_budget,
     )
     # 10. Initialize Provider Adapters & Generation Router (Phase 15)
     cb_registry = CircuitBreakerRegistry(
@@ -321,6 +328,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         model=model_id,
                         timeout_s=20.0,
                         tpm_limit=config.groq_tpm_limit,
+                        budget=groq_budget,
                     ),
                     breaker=cb_registry.get_or_create(spec),
                     first_token_timeout_s=config.groq_first_token_timeout_ms / 1000.0 or None,
@@ -352,7 +360,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         log.info("Generation chain configured", order=[e.name for e in chain_entries])
     # Billing model groups (config/models.yaml): an invalid registry is a startup error.
-    group_chains = build_group_chains(config, context_window_manager, cb_registry)
+    group_chains = build_group_chains(config, context_window_manager, cb_registry, groq_budget=groq_budget)
     container.group_chains = group_chains
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter

@@ -15,12 +15,18 @@ from app.config.settings import LLMServiceConfig, get_settings
 from app.models.execution_plan import ExecutionPlan, UserMode
 from app.models.pipeline_context import PipelineContext
 from app.providers.nvidia import NVIDIAAdapter
-from app.request_analyzer.groq_client import GroqAnalysisClient
+from app.request_analyzer.groq_client import AnalysisBudgetSkipped, GroqAnalysisClient
 from app.request_analyzer.prompt_template import AnalysisPromptBuilder
 from app.request_analyzer.safe_default import SafeDefaultFactory
 from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from app.utils.retry import RetryManager, RetryPolicy
 from app.utils.tracing import trace_span
+
+
+async def _reserve(client, messages):
+    """The client's budget claim; None for a client that has no budget (older clients, test doubles)."""
+    reserve = getattr(client, "reserve", None)
+    return await reserve(messages) if reserve is not None else None
 
 
 class RequestAnalyzer:
@@ -81,7 +87,8 @@ class RequestAnalyzer:
         groq_exc: Exception | None = None
 
         try:
-            raw_json = await self._call_groq(messages)
+            claimed = await _reserve(self.groq_client, messages)   # may raise AnalysisBudgetSkipped
+            raw_json = await self._call_groq(messages, claimed)
             plan = self._finalize_plan(raw_json, start_time, ctx, model_used=self.groq_client.model)
             self.logger.info(
                 "Request analysis completed",
@@ -93,6 +100,13 @@ class RequestAnalyzer:
                 latency_ms=round(plan.analysis_latency_ms, 2),
             )
             return plan
+        except AnalysisBudgetSkipped as exc:
+            # Never spend the answer's bucket on analysis: the heuristic plan is enough for this message.
+            from app.providers.groq_budget import ANALYSIS_SKIPPED
+
+            ANALYSIS_SKIPPED.inc()
+            self.logger.info("analysis_skipped_budget", model=self.groq_client.model, reason=str(exc), conversation_id=ctx.conversation_id)
+            return SafeDefaultFactory.create(latency_ms=(time.perf_counter() - start_time) * 1000.0, reason="budget")
         except Exception as exc:
             groq_exc = exc
             self.logger.warning(
@@ -103,8 +117,9 @@ class RequestAnalyzer:
 
         for client in self.fallback_clients:
             try:
+                claimed = await _reserve(client, messages)   # may raise AnalysisBudgetSkipped
                 raw_json = await asyncio.wait_for(
-                    client.complete(messages=messages), timeout=client.timeout_ms / 1000.0 + 1.0
+                    client.complete(messages=messages, estimate=claimed), timeout=client.timeout_ms / 1000.0 + 1.0
                 )
                 plan = self._finalize_plan(raw_json, start_time, ctx, model_used=client.model)
                 self.logger.info(
@@ -115,6 +130,12 @@ class RequestAnalyzer:
                     latency_ms=round(plan.analysis_latency_ms, 2),
                 )
                 return plan
+            except AnalysisBudgetSkipped as skip:
+                from app.providers.groq_budget import ANALYSIS_SKIPPED
+
+                ANALYSIS_SKIPPED.inc()
+                self.logger.info("analysis_skipped_budget", model=client.model, reason=str(skip), conversation_id=ctx.conversation_id)
+                continue
             except Exception as fb_exc:
                 self.logger.warning(
                     "Fallback analysis model failed",
@@ -175,12 +196,12 @@ class RequestAnalyzer:
         latency_ms = (time.perf_counter() - start_time) * 1000.0
         return SafeDefaultFactory.create(latency_ms=latency_ms, reason=type(groq_exc).__name__)
 
-    async def _call_groq(self, messages: list[dict[str, str]]) -> str:
+    async def _call_groq(self, messages: list[dict[str, str]], claimed: int | None = None) -> str:
         """Executes the Groq analysis call protected by Circuit Breaker and Retries."""
         async with self.circuit_breaker.call():
 
             async def _do_call():
-                return await self.groq_client.complete(messages=messages)
+                return await self.groq_client.complete(messages=messages, estimate=claimed)
 
             return await self.retry_manager.execute_with_retry(
                 _do_call,
