@@ -22,14 +22,23 @@ from app.config.logging import (
 _TRACER = None
 
 
-def setup_tracing(service_name: str = "llm-service", endpoint: str | None = None) -> trace.Tracer:
-    """Configures OpenTelemetry TracerProvider and returns default tracer."""
+def setup_tracing(service_name: str = "llm-service", endpoint: str | None = None, enabled: bool = True) -> trace.Tracer:
+    """Configures OpenTelemetry TracerProvider and returns default tracer.
+
+    With `enabled` False (OTEL_ENABLED=false) or no endpoint (OTEL_ENDPOINT unset) NO exporter and no span processor are created:
+    spans are cheap no-ops and nothing retries a connection to a collector that is not there.
+    """
     global _TRACER
     resource = Resource.create({"service.name": service_name, "service.version": "2.0.0"})
     provider = TracerProvider(resource=resource)
 
-    # In local/test environments or if no otel endpoint, fallback to console or noop
-    if os.getenv("ENVIRONMENT") == "development" or not endpoint:
+    if not enabled or not endpoint:
+        trace.set_tracer_provider(provider)
+        _TRACER = trace.get_tracer(service_name)
+        return _TRACER
+
+    # In local/test environments fall back to the console exporter
+    if os.getenv("ENVIRONMENT") == "development":
         processor = BatchSpanProcessor(ConsoleSpanExporter())
     else:
         try:

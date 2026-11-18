@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     # 2. Initialize OTel tracer
-    setup_tracing(service_name=config.service_name, endpoint=config.otel_endpoint)
+    setup_tracing(service_name=config.service_name, endpoint=config.otel_endpoint, enabled=config.otel_enabled)
 
     # 3. Initialize DI Container
     container: Container = init_container(config=config)

@@ -213,6 +213,7 @@ class LLMServiceConfig(BaseSettings):
 
     # Observability
     otel_endpoint: str = "http://localhost:4317"
+    otel_enabled: bool = True   # false (or an empty OTEL_ENDPOINT): no exporter is created, so nothing retries a missing collector
     prometheus_port: int = 9090
 
     # Generation provider toggle: when true, NVIDIA NIM is the primary
