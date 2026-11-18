@@ -29,6 +29,7 @@ PREFIX = "groq:budget:"
 ANSWER = "answer"
 BUDGET_REMAINING = Gauge("groq_budget_remaining", "Groq tokens left in the current minute, from the last response headers", ["model"])
 ANALYSIS_SKIPPED = Counter("groq_analysis_skipped_total", "Request analyses skipped so they do not eat the answer reserve")
+ANALYSIS_EMPTY_OUTPUT = Counter("analysis_empty_output_total", "Request analyses whose first answer was empty or unparseable (retried once with a doubled cap)")
 BUDGET_WAITS = Counter("groq_budget_waits_total", "Calls that found a Groq model's budget short", ["purpose"])
 
 _DURATION = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m|h)")

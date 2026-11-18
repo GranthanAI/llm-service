@@ -89,7 +89,17 @@ class RequestAnalyzer:
         try:
             claimed = await _reserve(self.groq_client, messages)   # may raise AnalysisBudgetSkipped
             raw_json = await self._call_groq(messages, claimed)
-            plan = self._finalize_plan(raw_json, start_time, ctx, model_used=self.groq_client.model)
+            try:
+                plan = self._finalize_plan(raw_json, start_time, ctx, model_used=self.groq_client.model)
+            except (ValueError, TypeError) as parse_exc:   # not JSON / not a valid plan (JSONDecodeError and pydantic's error are ValueErrors)
+                # often a plan cut off by max_tokens: ask once more with twice the room, then fall back as before
+                from app.providers.groq_budget import ANALYSIS_EMPTY_OUTPUT
+
+                ANALYSIS_EMPTY_OUTPUT.inc()
+                self.logger.warning("analysis_empty_output", reason="unparseable", error=str(parse_exc)[:120], conversation_id=ctx.conversation_id)
+                bigger = min(getattr(self.groq_client, "max_tokens", 1024) * 2, getattr(self.groq_client, "retry_max_tokens", 2048))
+                raw_json = await self.groq_client.complete(messages=messages, max_tokens=bigger)
+                plan = self._finalize_plan(raw_json, start_time, ctx, model_used=self.groq_client.model)
             self.logger.info(
                 "Request analysis completed",
                 provider="groq",

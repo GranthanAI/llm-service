@@ -178,7 +178,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             timeout_ms=config.groq_timeout_ms,
             client=AsyncGroq(api_key=groq_key or "not-set", max_retries=0),
             budget=groq_budget,
-            max_tokens=config.groq_analysis_max_tokens,
+            max_tokens=config.request_analysis_max_tokens,
+            retry_max_tokens=config.request_analysis_retry_max_tokens,
         )
 
     groq_client = _analysis_client(config.groq_model)

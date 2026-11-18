@@ -62,7 +62,8 @@ class LLMServiceConfig(BaseSettings):
     # Shared per-model Groq token budget (also used by memory-service): the same Redis in both. Empty = in-process window only.
     groq_budget_redis_url: str = "redis://127.0.0.1:6379/0"
     groq_output_estimate_tokens: int = 600      # expected output of a call before Groq's headers are known (never the full max_tokens)
-    groq_analysis_max_tokens: int = 512
+    request_analysis_max_tokens: int = 1024      # REQUEST_ANALYSIS_MAX_TOKENS: gpt-oss reasoning tokens count inside it
+    request_analysis_retry_max_tokens: int = 2048  # cap of the one retry (cap doubled) after an empty or unparseable answer
     # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
     # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input
     # tokens/min on qwen): the prompt AND the answer must both fit. 0 = no cap (model's full window).

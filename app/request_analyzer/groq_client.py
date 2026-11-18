@@ -19,6 +19,11 @@ from app.exceptions.provider import (
 )
 
 
+def supports_reasoning_effort(model: str) -> bool:
+    """Groq accepts reasoning_effort for the gpt-oss family only; other models reject the parameter."""
+    return (model or "").startswith("openai/gpt-oss")
+
+
 class AnalysisBudgetSkipped(Exception):
     """The model's Groq budget cannot take an analysis call without eating the answer reserve: skip analysis."""
 
@@ -37,10 +42,12 @@ class GroqAnalysisClient:
         client: AsyncGroq | None = None,
         logger: structlog.stdlib.BoundLogger | None = None,
         budget: Any = None,
-        max_tokens: int = 512,
+        max_tokens: int = 1024,
+        retry_max_tokens: int = 2048,
     ):
         self.budget = budget
         self.max_tokens = max_tokens
+        self.retry_max_tokens = retry_max_tokens
         self.api_key: str = api_key
         self.model: str = model
         self.timeout_ms: int = timeout_ms
@@ -68,22 +75,37 @@ class GroqAnalysisClient:
         response_format: dict[str, Any] | None = None,
         temperature: float = 0.1,
         estimate: int | None = None,
+        max_tokens: int | None = None,
     ) -> str:
-        """Execute chat completion in JSON mode against Groq."""
+        """Execute chat completion in JSON mode against Groq. An EMPTY answer is retried once at once with the output cap doubled
+        (gpt-oss reasoning can use up max_tokens); if it is still empty the usual error is raised."""
         fmt = response_format or {"type": "json_object"}
         timeout_sec = self.timeout_ms / 1000.0
         if estimate is None:  # called without reserve(): claim here
             estimate = await self.reserve(messages)
 
+        cap = max_tokens or self.max_tokens
+        extra = {"reasoning_effort": "low"} if supports_reasoning_effort(self.model) else {}
         try:
             response = await self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,  # type: ignore[arg-type]
                 temperature=temperature,
                 response_format=fmt,
-                max_tokens=self.max_tokens,
+                max_tokens=cap,
                 timeout=timeout_sec,
+                **extra,
             )
+            if not (response.choices[0].message.content or "").strip() and max_tokens is None:
+                from app.providers.groq_budget import ANALYSIS_EMPTY_OUTPUT
+
+                bigger = min(cap * 2, self.retry_max_tokens)
+                ANALYSIS_EMPTY_OUTPUT.inc()
+                self.logger.warning("analysis_empty_output", model=self.model, max_tokens=cap, retry_max_tokens=bigger)
+                response = await self._client.chat.completions.create(
+                    model=self.model, messages=messages, temperature=temperature,  # type: ignore[arg-type]
+                    response_format=fmt, max_tokens=bigger, timeout=timeout_sec, **extra,
+                )
             if self.budget is not None and getattr(response, "usage", None) is not None:
                 await self.budget.settle(self.model, estimate, int(getattr(response.usage, "total_tokens", estimate) or estimate))
 
