@@ -227,7 +227,7 @@ class GroqAdapter(BaseProviderAdapter):
 
     def _estimate(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> int:
         """Tokens this call will count against the minute: the prompt plus the output it asks for."""
-        max_tokens = output_budget(int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit)
+        max_tokens = params.get("_max_tokens") or output_budget(int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit)
         return estimate_prompt_tokens(messages) + max_tokens
 
     async def budget_wait(self, messages: list[dict[str, Any]], params: dict[str, Any] | None = None) -> float:
@@ -236,9 +236,17 @@ class GroqAdapter(BaseProviderAdapter):
         params = params if params is not None else {}
         if self.budget is None:
             return 0.0
-        wait = await self.budget.acquire(self.model_name, self._estimate(messages, params), "answer")
+        # Groq admits a request against prompt + max_tokens, so ask for as much output as the bucket has left (not more than
+        # wanted), but never less than MIN_OUTPUT_TOKENS: below that the model is skipped / waited for instead.
+        prompt = estimate_prompt_tokens(messages)
+        want = output_budget(int(params.get("max_tokens", 0) or 0), prompt, self.tpm_limit)
+        left = await self.budget.available(self.model_name, "answer")
+        out = want if left is None else max(min(want, left - prompt - 100), MIN_OUTPUT_TOKENS)
+        params["_max_tokens"] = out
+        wait = await self.budget.acquire(self.model_name, prompt + out, "answer")
         if wait <= 0:
             params["_budget_claimed"] = self.model_name
+            params["_budget_estimate"] = prompt + out
         return wait
 
     async def stream(
@@ -252,13 +260,14 @@ class GroqAdapter(BaseProviderAdapter):
         temperature = params.get("temperature", 0.7)
         # gpt-oss counts its reasoning tokens inside the same budget as the visible answer, so the limit
         # passed down for another provider is a floor, never a ceiling, for this adapter.
-        max_tokens = output_budget(
+        max_tokens = params.get("_max_tokens") or output_budget(
             int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit
         )
         extra: dict[str, Any] = {"reasoning_effort": "low"} if model.startswith("openai/gpt-oss") else {}
         claimed = self.budget is None or params.get("_budget_claimed") == model
         if not claimed:  # called outside the chain (legacy order): claim here, wait only for a short gap
-            gap = await self.budget.acquire(model, self._estimate(messages, params), "answer")
+            params["_budget_estimate"] = self._estimate(messages, params)
+            gap = await self.budget.acquire(model, params["_budget_estimate"], "answer")
             if gap > MAX_RATE_LIMIT_WAIT_S:
                 raise ProviderRateLimitError(f"Groq budget for {model} is short for {gap:.0f}s", provider="groq", retry_after_seconds=gap)
             if gap > 0:
@@ -303,6 +312,12 @@ class GroqAdapter(BaseProviderAdapter):
                         params, provider="groq", model=model,
                         input_tokens=getattr(usage, "prompt_tokens", None), output_tokens=getattr(usage, "completion_tokens", None),
                         cached_input_tokens=_groq_cached(usage), messages=current, output_text="".join(attempt_text))
+                    if self.budget is not None and params.get("_budget_estimate"):
+                        # the call is over: the minute was charged for what it really used, not for prompt + max_tokens
+                        claimed = int(params["_budget_estimate"])
+                        used = int(getattr(usage, "total_tokens", 0) or 0) or claimed
+                        await self.budget.settle_window(model, claimed, used)
+                        await self.budget.settle(model, claimed, used)
                     if truncated:
                         self.logger.warning("Groq answer hit the output token limit", max_tokens=max_tokens)
                         yield TRUNCATION_NOTICE

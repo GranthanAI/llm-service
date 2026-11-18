@@ -97,6 +97,9 @@ class MiniRedis:
             args += [score, member]
         return await self._call("ZADD", key, *args)
 
+    async def zrem(self, key: str, member: str) -> int:
+        return await self._call("ZREM", key, member)
+
     async def zremrangebyscore(self, key: str, low: float, high: float) -> int:
         return await self._call("ZREMRANGEBYSCORE", key, low, high)
 
