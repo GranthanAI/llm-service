@@ -190,7 +190,7 @@ class LLMServiceConfig(BaseSettings):
     nvidia_max_tokens: int = 8192
 
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     gemini_timeout_ms: int = 15000
     gemini_temperature: float = 0.7
     gemini_top_p: float = 0.95

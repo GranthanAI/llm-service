@@ -198,6 +198,12 @@ class GeminiAdapter(BaseProviderAdapter):
         """Translates Gemini SDK errors to internal ProviderError hierarchies."""
         err_msg = str(e)
         self.logger.error("Gemini generation failed", error=err_msg)
+        low = err_msg.lower()
+        if "404" in err_msg or "no longer available" in low or "not_found" in low:
+            # the provider retired this id (even while still listing it): billing hides it from the next availability poll
+            from app.providers.provider_models import provider_models
+
+            provider_models.mark_retired(self.model_name)
         if "429" in err_msg or "resource exhausted" in err_msg.lower():
             raise ProviderRateLimitError(f"Gemini Rate Limit: {err_msg}", provider="gemini", retry_after_seconds=retry_after_of(e)) from e
         if "timeout" in err_msg.lower() or "deadline exceeded" in err_msg.lower():

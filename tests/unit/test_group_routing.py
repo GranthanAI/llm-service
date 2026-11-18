@@ -109,7 +109,7 @@ def test_ultra_is_never_reached_from_best_and_fast_never_escalates():
 
 def test_explicit_model_goes_first_then_the_rest_of_its_group():
     chain = registry().chain_for(BillingGrant(granted_group="smart", granted_model="gemini-2.5-flash"), ALL)
-    assert ids(chain) == ["gemini-2.5-flash", "openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.1-flash-lite"]
+    assert ids(chain) == ["gemini-2.5-flash", "openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.5-flash-lite"]
 
 
 def test_auto_uses_the_group_order():
@@ -126,7 +126,7 @@ def test_disabled_models_and_providers_without_credentials_are_skipped():
     reg = ModelRegistry.load(REGISTRY_FILE)  # gemini-3.1-pro-preview ships disabled (not a verified API id)
     chain = reg.chain_for(BillingGrant(granted_group="smart"), lambda p: p != "anthropic")
     assert "claude-haiku-5-5" not in ids(chain)
-    assert ids(chain) == ["openai/gpt-oss-120b", "gpt-6-luna", "gemini-3.1-flash-lite", "gemini-2.5-flash"]
+    assert ids(chain) == ["openai/gpt-oss-120b", "gpt-6-luna", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
     best = reg.chain_for(BillingGrant(granted_group="best"), ALL)
     assert "gemini-3.1-pro" not in ids(best) and ids(best) == ["claude-sonnet-5-5", "gpt-6.1-sol"]
 
@@ -189,7 +189,7 @@ async def test_best_falls_back_inside_best_only_and_reports_the_model_that_answe
 
 async def test_explicit_model_falls_back_inside_its_group_only(monkeypatch):
     adapters = {i: FakeAdapter(i, fail=True) for i in ("openai/gpt-oss-120b", "claude-haiku-5-5", "gemini-2.5-flash",
-                                                      "gpt-6-luna", "gemini-3.1-flash-lite")}
+                                                      "gpt-6-luna", "gemini-3.5-flash-lite")}
     adapters.update({"claude-sonnet-5-5": FakeAdapter("sonnet"), "openai/gpt-oss-20b": FakeAdapter("fast20b")})
     monkeypatch.setattr("app.providers.group_chain.build_group_fitter", lambda *a, **k: (lambda p, n, e: p))
     chain = builder(adapters).build(BillingGrant(granted_group="smart", granted_model="gemini-2.5-flash"))
@@ -310,7 +310,7 @@ def test_registry_output_limits_are_capped_by_the_service_settings_so_a_free_tie
 # --- L2: allowed_models keeps the chain inside the plan ---------------------------------------------------------------
 
 FREE_SMART = ["openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna"]
-SMART_ADAPTERS = ("openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.1-flash-lite", "gemini-2.5-flash")
+SMART_ADAPTERS = ("openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.5-flash-lite", "gemini-2.5-flash")
 
 
 def test_allowed_models_filter_the_group_order_and_the_granted_model_leads():
@@ -339,7 +339,7 @@ async def test_free_user_on_haiku_failing_falls_back_only_to_plan_models(monkeyp
     assert [t async for t in chain.generate_stream(prompt(), params)] == ["hi"]
     assert params["_route"]["model_id"] == "gpt-6-luna"
     assert adapters["claude-haiku-5-5"].calls == 1 and adapters["openai/gpt-oss-120b"].calls == 1
-    assert adapters["gemini-2.5-flash"].calls == 0 and adapters["gemini-3.1-flash-lite"].calls == 0   # never outside the plan
+    assert adapters["gemini-2.5-flash"].calls == 0 and adapters["gemini-3.5-flash-lite"].calls == 0   # never outside the plan
 
 
 async def test_downgraded_advanced_case_chains_only_the_plans_smart_models(monkeypatch):

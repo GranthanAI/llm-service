@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.api.dependencies import ContainerDep
 from app.providers.availability import build_availability
+from app.providers.provider_models import provider_models
 
 router = APIRouter(tags=["models-internal"])
 
@@ -18,4 +19,5 @@ async def models_availability(container: ContainerDep, x_service_token: str | No
     group_chains = getattr(container, "group_chains", None)
     if group_chains is None:
         raise HTTPException(status_code=503, detail="Model registry is not loaded")
-    return build_availability(group_chains)
+    provider_models.api_key = container.config.gemini_api_key.get_secret_value()
+    return await build_availability(group_chains, provider_models)

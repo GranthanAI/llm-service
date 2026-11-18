@@ -15,8 +15,10 @@
 models:
   openai/gpt-oss-20b:
     {provider: groq, provider_model: openai/gpt-oss-20b, group: fast, context_window: 131072, max_output_tokens: 8192, enabled: true}
-  gemini-2.5-flash-lite:
-    {provider: google, provider_model: gemini-2.5-flash-lite, group: fast, context_window: 1048576, max_output_tokens: 8192, enabled: true}
+  gemini-3.1-flash-lite:
+    {provider: google, provider_model: gemini-3.1-flash-lite, group: fast, context_window: 1048576, max_output_tokens: 8192, enabled: true}
+  gemini-2.5-flash-lite:   # retired for new keys (404 "no longer available to new users"): kept for old keys, off by default
+    {provider: google, provider_model: gemini-2.5-flash-lite, group: fast, context_window: 1048576, max_output_tokens: 8192, enabled: false}
 
   openai/gpt-oss-120b:
     {provider: groq, provider_model: openai/gpt-oss-120b, group: smart, context_window: 131072, max_output_tokens: 8192, enabled: true}
@@ -24,8 +26,8 @@ models:
     {provider: anthropic, provider_model: claude-haiku-5-5, group: smart, context_window: 1000000, max_output_tokens: 8192, enabled: true}
   gpt-6-luna:
     {provider: openai, provider_model: gpt-6-luna, group: smart, context_window: 922000, max_output_tokens: 8192, enabled: true}
-  gemini-3.1-flash-lite:
-    {provider: google, provider_model: gemini-3.1-flash-lite, group: smart, context_window: 1048576, max_output_tokens: 8192, enabled: true}
+  gemini-3.5-flash-lite:
+    {provider: google, provider_model: gemini-3.5-flash-lite, group: smart, context_window: 1048576, max_output_tokens: 8192, enabled: true}
   gemini-2.5-flash:
     {provider: google, provider_model: gemini-2.5-flash, group: smart, context_window: 1048576, max_output_tokens: 8192, enabled: true}
 
@@ -43,7 +45,7 @@ models:
 
 # Auto order inside each group (speed first, then cost).
 group_order:
-  fast:  [openai/gpt-oss-20b, gemini-2.5-flash-lite]
-  smart: [openai/gpt-oss-120b, claude-haiku-5-5, gpt-6-luna, gemini-3.1-flash-lite, gemini-2.5-flash]
+  fast:  [openai/gpt-oss-20b, gemini-3.1-flash-lite, gemini-2.5-flash-lite]
+  smart: [openai/gpt-oss-120b, claude-haiku-5-5, gpt-6-luna, gemini-3.5-flash-lite, gemini-2.5-flash]
   best:  [claude-sonnet-5-5, gpt-6.1-sol, gemini-3.1-pro]
   ultra: [claude-opus-5-5, gpt-6-astra]
