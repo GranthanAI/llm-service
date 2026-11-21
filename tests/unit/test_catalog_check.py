@@ -34,7 +34,7 @@ def test_compare_reports_each_kind_of_mismatch():
     catalog = [dict(m) for m in SNAPSHOT]
     problems = compare(catalog, REGISTRY, lambda p: p != "anthropic", lambda spec: spec.id != "gpt-6-luna")
     assert set(problems["no_credentials"]) == {"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"}
-    assert problems["disabled"] == ["gemini-2.5-flash-lite", "gemini-3.1-pro", "gpt-6-astra"]  # shipped disabled: preview id unverified; astra is not offered
+    assert sorted(problems["disabled"]) == sorted(["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.1-pro", "gpt-6-astra"])  # shipped disabled: preview id unverified; astra is not offered
     assert problems["no_adapter"] == ["gpt-6-luna"]
     catalog.append({"id": "brand-new", "group": "fast", "provider": "groq", "label": "x", "sort_order": 99})
     catalog[0]["group"] = "ultra"

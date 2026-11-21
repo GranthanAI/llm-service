@@ -27,7 +27,7 @@ UNPRICED_MODELS = frozenset({"qwen/qwen3.8-27b", "nvidia/nemotron-3.5-lightning-
 
 DEFAULT_GROUP_ORDER: dict[str, list[str]] = {
     "fast": ["openai/gpt-oss-20b", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"],
-    "smart": ["openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.5-flash-lite", "gemini-2.5-flash"],
+    "smart": ["openai/gpt-oss-120b", "claude-haiku-5-5", "gpt-6-luna", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash"],
     "best": ["claude-sonnet-5-5", "gpt-6.1-sol", "gemini-3.1-pro"],
     "ultra": ["claude-opus-5-5", "gpt-6-astra"],
 }

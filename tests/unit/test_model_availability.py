@@ -33,7 +33,7 @@ def by_id(payload):
 def test_models_without_keys_are_unavailable_with_a_reason():
     m = by_id(asyncio.run(build_availability(chains())))
     assert m["openai/gpt-oss-120b"] == {"id": "openai/gpt-oss-120b", "available": True, "reason": ""}
-    assert m["gemini-2.5-flash"]["available"] is True
+    assert m["gemini-3.8-flash"]["available"] is True
     for model in ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "gpt-6-luna", "gpt-6.1-sol"):
         assert m[model] == {"id": model, "available": False, "reason": "no_credentials"}
 
@@ -97,15 +97,15 @@ def avail(pm, keys=("groq", "google")):
 
 
 def test_a_google_id_the_provider_no_longer_lists_is_unavailable_as_retired():
-    m = avail(with_provider(listed={"gemini-3.1-flash-lite", "gemini-2.5-flash"}))
+    m = avail(with_provider(listed={"gemini-3.1-flash-lite", "gemini-3.8-flash"}))
     assert m["gemini-3.1-flash-lite"]["available"] is True
     assert m["gemini-3.5-flash-lite"] == {"id": "gemini-3.5-flash-lite", "available": False, "reason": "retired by provider"}
     assert m["openai/gpt-oss-120b"]["available"] is True          # Groq ids are not checked against Google's list
 
 
 def test_a_404_seen_at_runtime_retires_an_id_even_while_it_is_still_listed():
-    m = avail(with_provider(listed={"gemini-3.1-flash-lite", "gemini-2.5-flash"}, retired=["gemini-2.5-flash"]))
-    assert m["gemini-2.5-flash"]["reason"] == "retired by provider"
+    m = avail(with_provider(listed={"gemini-3.1-flash-lite", "gemini-3.8-flash"}, retired=["gemini-3.8-flash"]))
+    assert m["gemini-3.8-flash"]["reason"] == "retired by provider"
 
 
 def test_when_the_list_cannot_be_read_it_fails_open():

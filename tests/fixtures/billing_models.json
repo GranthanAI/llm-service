@@ -44,8 +44,8 @@
     },
     {
       "group": "smart",
-      "id": "gemini-2.5-flash",
-      "label": "Gemini 2.5 Flash",
+      "id": "gemini-3.8-flash",
+      "label": "Gemini 3.8 Flash",
       "provider": "google",
       "sort_order": 6
     },
@@ -90,6 +90,13 @@
       "provider": "openai",
       "group": "ultra",
       "sort_order": 12
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "label": "Gemini 2.5 Flash",
+      "provider": "google",
+      "group": "smart",
+      "sort_order": 13
     }
   ]
 }
