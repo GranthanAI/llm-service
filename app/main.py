@@ -363,6 +363,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("Generation chain configured", order=[e.name for e in chain_entries])
     # Billing model groups (config/models.yaml): an invalid registry is a startup error.
     group_chains = build_group_chains(config, context_window_manager, cb_registry, groq_budget=groq_budget)
+    context_window_manager.apply_registry(group_chains.registry)   # real windows and output limits from models.yaml
     container.group_chains = group_chains
     container.nvidia_adapter = nvidia_adapter
     container.gemini_adapter = gemini_adapter

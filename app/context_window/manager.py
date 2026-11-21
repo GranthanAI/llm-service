@@ -58,6 +58,13 @@ class ContextWindowManager:
             max_output_tokens=4096,
             provider="groq",
         ),
+        # Groq helper model request analysis runs on (not in models.yaml: it is never offered to users)
+        "qwen/qwen3.8-27b": ModelLimits(
+            model="qwen/qwen3.8-27b",
+            context_window=131072,
+            max_output_tokens=16384,
+            provider="groq",
+        ),
         # Used ONLY for a model that has no registered limits (never silently a large window): deliberately
         # conservative, so an unregistered model can at worst be under-used, never overflowed. A warning is logged
         # once per model; register real limits with register_model_limits() / pass model_limits=.
@@ -80,6 +87,7 @@ class ContextWindowManager:
         self.trimmer = trimmer or PriorityTrimmer(token_counter=self.token_counter)
         self.provider_limits = model_limits or dict(self.DEFAULT_MODEL_LIMITS)
         self._warned_unknown: set[str] = set()
+        self._operator_models: set[str] = set()   # windows the operator declared (CONTEXT_MODEL_WINDOWS): the registry never overrides them
         self.logger = logger_instance or logger
         self.tracer = get_tracer()
 
@@ -91,6 +99,7 @@ class ContextWindowManager:
         """Registers the operator-declared model windows (CONTEXT_MODEL_WINDOWS) and sets the window used for models
         that are not registered (CONTEXT_UNKNOWN_MODEL_WINDOW_TOKENS)."""
         for model, window in config.context_model_windows.items():
+            self._operator_models.add(model)
             self.provider_limits[model] = ModelLimits(
                 model=model, context_window=window,
                 max_output_tokens=min(config.context_output_token_reserve, max(256, window // 4)),
@@ -98,6 +107,22 @@ class ContextWindowManager:
         unknown = config.context_unknown_model_window_tokens
         self.provider_limits["default"] = ModelLimits(
             model="default", context_window=unknown, max_output_tokens=min(1024, max(256, unknown // 4)), provider="nvidia")
+
+    def apply_registry(self, registry: Any) -> int:
+        """Takes every model's context_window and max_output_tokens from models.yaml (the billing model registry), under the catalog
+        id AND the provider's own model string (callers use either), so none of them is 'unknown_model_limits'. A window the operator
+        declared in CONTEXT_MODEL_WINDOWS wins. Returns how many models were registered."""
+        provider = {"google": "gemini"}
+        count = 0
+        for spec in registry.models.values():
+            limits = ModelLimits(
+                model=spec.id, context_window=spec.context_window, max_output_tokens=spec.max_output_tokens,
+                provider=provider.get(spec.provider, spec.provider))
+            for key in {spec.id, spec.provider_model}:
+                if key not in self._operator_models:
+                    self.provider_limits[key] = limits
+            count += 1
+        return count
 
     def resolve_limits(self, target_model: str) -> tuple[ModelLimits | None, bool]:
         """(limits, assumed). `assumed` is True (and limits is None) for an unregistered model; the caller then uses the
