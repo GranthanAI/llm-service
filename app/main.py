@@ -182,10 +182,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             retry_max_tokens=config.request_analysis_retry_max_tokens,
         )
 
-    groq_client = _analysis_client(config.groq_model)
+    groq_client = _analysis_client(config.request_analysis_model)
     # Request planning falls back through the same Groq models as answer generation, in the same order.
     analysis_fallbacks = (
-        [_analysis_client(m) for m in dict.fromkeys(config.groq_order_models) if m != config.groq_model]
+        [_analysis_client(m) for m in dict.fromkeys(config.groq_order_models) if m != config.request_analysis_model]
         if groq_key
         else []
     )

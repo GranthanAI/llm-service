@@ -100,3 +100,14 @@ async def test_an_unparseable_plan_gets_one_retry_with_a_doubled_cap_then_the_he
     plan = await analyzer_with(FakeClient()).analyze(SimpleNamespace(conversation_id="c1"), None)
     assert calls == [None, 2048]                                      # the first call, then ONE retry with twice the room
     assert plan is not None                                           # the existing heuristic (safe default) plan came back
+
+
+async def test_request_analysis_has_its_own_groq_model_not_the_answer_default():
+    cfg = LLMServiceConfig(_env_file=None)
+    assert cfg.request_analysis_model == "qwen/qwen3.8-27b"
+    assert cfg.request_analysis_model not in ("openai/gpt-oss-120b",)          # answers default to the 120b bucket
+    import pathlib
+    main = (pathlib.Path(__file__).resolve().parents[2] / "app" / "main.py").read_text(encoding="utf-8")
+    assert "_analysis_client(config.request_analysis_model)" in main            # and the analyzer is built on it
+    c = GroqAnalysisClient("k", model=cfg.request_analysis_model, client=MagicMock())
+    assert not supports_reasoning_effort(c.model)                                # qwen does not take reasoning_effort
