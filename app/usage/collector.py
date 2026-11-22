@@ -27,7 +27,7 @@ logger = get_logger("usage_collector")
 PURPOSES = (
     "answer", "request_analysis", "query_rewrite", "workflow", "research", "manim_plan",
     # cost-only features published as usage.metered (purpose = feature)
-    "mermaid.repair", "manim.repair",
+    "mermaid.repair", "manim.repair", "followups",
 )
 
 # billing's provider names (config/seed/model_prices.yaml): our "gemini" adapter is billing's "google"

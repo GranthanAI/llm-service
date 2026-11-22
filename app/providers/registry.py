@@ -37,6 +37,26 @@ class RegistryError(ValueError):
     """The model registry file is invalid (a startup error)."""
 
 
+THINK_KINDS = ("none", "effort", "budget")
+
+
+@dataclass(frozen=True)
+class ThinkSpec:
+    """How a model "thinks longer" (provider reasoning), read from config/models.yaml `think:`.
+
+    kind none    no reasoning control llm-service can use: the model answers normally even when asked to think
+    kind effort  a reasoning-effort / thinking-level parameter: `normal` is sent for ordinary answers (omitted when null),
+                 `think` for a think-longer answer
+    kind budget  an explicit thinking-token budget (`budget_tokens`)
+    max_output_tokens  output budget of a think call (0 = twice the model's max_output_tokens)."""
+
+    kind: str = "none"
+    normal: str | None = None
+    think: str | None = None
+    budget_tokens: int = 0
+    max_output_tokens: int = 0
+
+
 @dataclass(frozen=True)
 class ModelSpec:
     id: str                 # billing catalog id
@@ -46,6 +66,36 @@ class ModelSpec:
     context_window: int
     max_output_tokens: int
     enabled: bool = True
+    think: ThinkSpec = ThinkSpec()
+
+
+def think_output_tokens(spec: ModelSpec) -> int:
+    """The output budget of a think-longer call: twice the normal one, capped by the model's own think limit. A model that
+    cannot think keeps its normal budget."""
+    if spec.think.kind == "none":
+        return spec.max_output_tokens
+    want = spec.max_output_tokens * 2
+    cap = spec.think.max_output_tokens or want
+    return max(spec.max_output_tokens, min(want, cap))
+
+
+def _think_spec(model_id: str, raw: object) -> ThinkSpec:
+    if raw is None:
+        return ThinkSpec()
+    if not isinstance(raw, dict):
+        raise RegistryError(f"model {model_id!r}: think must be a mapping")
+    kind = str(raw.get("kind", "none"))
+    if kind not in THINK_KINDS:
+        raise RegistryError(f"model {model_id!r}: think.kind must be one of {list(THINK_KINDS)}, got {kind!r}")
+    spec = ThinkSpec(
+        kind=kind, normal=(None if raw.get("normal") is None else str(raw["normal"])),
+        think=(None if raw.get("think") is None else str(raw["think"])),
+        budget_tokens=int(raw.get("budget_tokens", 0) or 0), max_output_tokens=int(raw.get("max_output_tokens", 0) or 0))
+    if kind == "effort" and not spec.think:
+        raise RegistryError(f"model {model_id!r}: think.kind effort needs a `think` level")
+    if kind == "budget" and spec.budget_tokens < 1024:
+        raise RegistryError(f"model {model_id!r}: think.kind budget needs budget_tokens >= 1024")
+    return spec
 
 
 class ModelRegistry:
@@ -83,6 +133,7 @@ class ModelRegistry:
                     id=str(model_id), provider=str(body["provider"]), provider_model=str(body["provider_model"]),
                     group=str(body["group"]), context_window=int(body["context_window"]),
                     max_output_tokens=int(body["max_output_tokens"]), enabled=bool(body.get("enabled", True)),
+                    think=_think_spec(str(model_id), body.get("think")),
                 )
             except KeyError as exc:
                 raise RegistryError(f"model {model_id!r}: missing field {exc.args[0]!r}") from exc

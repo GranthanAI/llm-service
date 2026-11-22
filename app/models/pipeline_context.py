@@ -41,6 +41,11 @@ class PipelineContext(BaseModel):
     # Tool ids the user explicitly selected (validated against the registry before use).
     selected_tools: list[str] = Field(default_factory=list)
     include_diagrams: bool = False
+    # "Think longer": asked for AND allowed (conversation-service checked the plan). think_used is what really happened.
+    think: bool = False
+    think_used: bool = False
+    # Temporary chat: no long-term memory, no short-term memory window, no memory.update.requested.
+    temporary: bool = False
     # Set when attached documents were searched but nothing relevant was found / some were skipped.
     document_notice: str | None = None
     # Standalone web-search query derived from the message + conversation (None = use the raw message).
@@ -122,6 +127,8 @@ class PipelineContext(BaseModel):
             file_ids=event.file_ids,
             selected_tools=list(event.selected_tools or []),
             include_diagrams=bool(event.include_diagrams),
+            think=bool(event.think),
+            temporary=bool(event.temporary),
             event_history=[(h.role, h.content) for h in event.history if not h.inherited],
             event_history_ids=[h.message_id for h in event.history if not h.inherited],
             replaces_message_id=(event.metadata or {}).get("replaces_message_id") or None,

@@ -99,6 +99,9 @@ def estimate_prompt_tokens(messages: list[dict[str, Any]]) -> int:
     return int(sum(len(str(m.get("content", ""))) for m in messages) / _CHARS_PER_TOKEN) + 50
 
 
+THINK_HIGH_MIN_OUTPUT = 4096   # "high" reasoning needs at least this much output room in the TPM bucket, else "medium"
+
+
 def output_budget(requested: int, prompt_tokens: int, tpm_limit: int) -> int:
     """Largest output budget that still fits Groq's per-request tokens-per-minute limit.
 
@@ -232,6 +235,22 @@ class GroqAdapter(BaseProviderAdapter):
 
         return estimate_tokens(estimate_prompt_tokens(messages), max_tokens, getattr(self.budget, "output_estimate", 600))
 
+    def _effort(self, params: dict[str, Any], messages: list[dict[str, Any]], model: str) -> str:
+        """"low" normally. Think longer asks for the model's think level ("high"), but gpt-oss spends reasoning tokens
+        inside the same TPM bucket as the answer: when the bucket cannot fit a worthwhile output after this prompt, "medium"
+        is sent instead (and logged)."""
+        spec = self.think_spec
+        normal = (spec.normal if spec is not None and spec.normal else "low")
+        if not self.wants_think(params):
+            return normal
+        level = spec.think or "high"
+        if level == "high" and self.tpm_limit > 0:
+            room = self.tpm_limit - estimate_prompt_tokens(messages) - 200
+            if room < THINK_HIGH_MIN_OUTPUT:
+                self.logger.warning("think_effort_fallback", model=model, wanted="high", used="medium", room_tokens=room)
+                return "medium"
+        return level
+
     async def budget_wait(self, messages: list[dict[str, Any]], params: dict[str, Any] | None = None) -> float:
         """Seconds until this answer fits this model's shared budget (0.0 = it fits and is claimed). The chain calls this
         first so it can move to the next model instead of waiting."""
@@ -259,7 +278,9 @@ class GroqAdapter(BaseProviderAdapter):
         max_tokens = output_budget(
             int(params.get("max_tokens", 0) or 0), estimate_prompt_tokens(messages), self.tpm_limit
         )
-        extra: dict[str, Any] = {"reasoning_effort": "low"} if model.startswith("openai/gpt-oss") else {}
+        extra: dict[str, Any] = {}
+        if model.startswith("openai/gpt-oss"):
+            extra = {"reasoning_effort": self._effort(params, messages, model)}
         claimed = self.budget is None or params.get("_budget_claimed") == model
         if not claimed:  # called outside the chain (legacy order): claim here, wait only for a short gap
             params["_budget_estimate"] = self._estimate(messages, params)

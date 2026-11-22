@@ -56,8 +56,21 @@ class GeminiAdapter(BaseProviderAdapter):
         self.logger = logger_instance or logger
         self.tracer = get_tracer()
 
+    def _thinking_config(self, params: dict[str, Any]) -> types.ThinkingConfig | None:
+        """Think longer -> the model's thinking level / budget. include_thoughts stays false: thoughts are never returned."""
+        if not self.wants_think(params):
+            return None
+        spec = self.think_spec
+        if spec.kind == "budget":
+            return types.ThinkingConfig(thinking_budget=int(spec.budget_tokens or 4096), include_thoughts=False)
+        level = {"minimal": types.ThinkingLevel.MINIMAL, "low": types.ThinkingLevel.LOW,
+                 "medium": types.ThinkingLevel.MEDIUM, "high": types.ThinkingLevel.HIGH}.get(
+            str(spec.think or "high").lower(), types.ThinkingLevel.HIGH)
+        return types.ThinkingConfig(thinking_level=level, include_thoughts=False)
+
     def _convert_messages(
-        self, messages: list[dict[str, Any]], temperature: float, max_tokens: int
+        self, messages: list[dict[str, Any]], temperature: float, max_tokens: int,
+        thinking: types.ThinkingConfig | None = None,
     ) -> tuple[str | None, list[types.Content], types.GenerateContentConfig]:
         """Translates OpenAI message format into Gemini system instruction and content parts."""
         system_instructions: list[str] = []
@@ -89,6 +102,7 @@ class GeminiAdapter(BaseProviderAdapter):
             system_instruction=sys_inst,
             temperature=temperature,
             max_output_tokens=max_tokens,
+            thinking_config=thinking,
         )
         return sys_inst, contents, config
 
@@ -109,7 +123,7 @@ class GeminiAdapter(BaseProviderAdapter):
             span.set_attribute("model", model)
 
             try:
-                _, contents, config = self._convert_messages(messages, temperature, max_tokens)
+                _, contents, config = self._convert_messages(messages, temperature, max_tokens, self._thinking_config(params))
                 response = await self.client.aio.models.generate_content(
                     model=model,
                     contents=contents,  # type: ignore[arg-type]
@@ -169,7 +183,7 @@ class GeminiAdapter(BaseProviderAdapter):
             span.set_attribute("model", model)
 
             try:
-                _, contents, config = self._convert_messages(messages, temperature, max_tokens)
+                _, contents, config = self._convert_messages(messages, temperature, max_tokens, self._thinking_config(params))
                 stream_resp = await self.client.aio.models.generate_content_stream(
                     model=model,
                     contents=contents,  # type: ignore[arg-type]

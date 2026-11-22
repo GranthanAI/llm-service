@@ -40,8 +40,8 @@ def event(custom=None, mode_hint="default", defaults_mode=False, text="please re
 # ------------------------------------------------------------------ event contract
 
 
-async def test_schema_is_2_3_and_old_events_without_the_field_still_parse():
-    assert ChatMessageCreatedEvent(conversation_id="c", user_id="u", message_id="m", content="x").schema_version == "2.3"
+async def test_schema_is_2_5_and_old_events_without_the_field_still_parse():
+    assert ChatMessageCreatedEvent(conversation_id="c", user_id="u", message_id="m", content="x").schema_version == "2.5"
     old = ChatMessageCreatedEvent.model_validate({"conversation_id": "c", "user_id": "u", "message_id": "m",
                                                   "content": "x", "schema_version": "2.2"})
     assert old.custom_mode is None and old.history == []

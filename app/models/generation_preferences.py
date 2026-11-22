@@ -27,6 +27,8 @@ class GenerationPreferences(BaseModel):
     language_name: str = ""
     personal_instructions: str = ""
     citations: Citations = "show"
+    # Not a prompt setting: whether to publish follow-up questions after the answer (chat.response.suggestions).
+    suggest_followups: bool = True
 
     @property
     def is_default(self) -> bool:

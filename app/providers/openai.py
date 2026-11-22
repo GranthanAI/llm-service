@@ -69,6 +69,11 @@ class OpenAIAdapter(BaseProviderAdapter):
         }
         if params.get("temperature") is not None and params.get("_send_temperature"):
             kwargs["temperature"] = params["temperature"]
+        if self.wants_think(params):
+            # Reasoning tokens are billed as (and counted in) completion tokens; the reasoning text is never returned.
+            kwargs["reasoning_effort"] = self.think_spec.think or "high"
+        elif self.think_spec is not None and self.think_spec.kind == "effort" and self.think_spec.normal:
+            kwargs["reasoning_effort"] = self.think_spec.normal
         return kwargs
 
     async def execute(self, messages: list[dict[str, Any]], params: dict[str, Any] | None = None) -> GenerationResponse:

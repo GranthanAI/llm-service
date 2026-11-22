@@ -117,6 +117,7 @@ class ProviderChain:
                     continue
 
             emitted = False
+            params.pop("_think_applied", None)      # each attempt decides for itself whether it reasons
             try:
                 async for token in with_deadlines(
                     entry.adapter.stream(attempt_prompt.messages, params),
@@ -133,6 +134,8 @@ class ProviderChain:
                             fallback_used=bool(failures),
                             fallback_reason=failures[-1][1] if failures else None,
                         )
+                        if params.get("_think_applied"):       # reasoning really used for this answer
+                            route["think"] = True
                         if entry.spec is not None:     # billing group chain only: the catalog id that answered
                             route["model_id"] = entry.spec.id
                     yield token

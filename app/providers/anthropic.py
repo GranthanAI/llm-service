@@ -100,6 +100,12 @@ class AnthropicAdapter(BaseProviderAdapter):
         }
         if system:
             kwargs["system"] = system
+        if self.wants_think(params):
+            budget = int(self.think_spec.budget_tokens or 4096)
+            # extended thinking: the budget counts inside max_tokens (which must exceed it); the thinking text is requested
+            # as omitted and never streamed (only text deltas are yielded below)
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget, "display": "omitted"}
+            kwargs["max_tokens"] = max(int(kwargs["max_tokens"]), budget + 1024)
         return kwargs
 
     async def execute(self, messages: list[dict[str, Any]], params: dict[str, Any] | None = None) -> GenerationResponse:

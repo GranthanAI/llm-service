@@ -68,7 +68,7 @@ class ChatMessageCreatedEvent(BaseModel):
     """
 
     event_type: str = "chat.message.created"
-    schema_version: str = "2.3"
+    schema_version: str = "2.5"
     # Request/correlation identity. For a normal send this is the user's message
     # id; for a regeneration it is a fresh request id. It is NOT the id of the
     # assistant message that will hold the reply.
@@ -98,6 +98,10 @@ class ChatMessageCreatedEvent(BaseModel):
     custom_mode: CustomModeSnapshot | None = None
     # 2.4 (additive): what billing granted this request (model group, context cap, hold). Absent = legacy routing.
     billing: BillingGrant | None = None
+    # 2.5 (additive): "think longer" (true only when the user asked AND the plan allowed it) and a temporary chat (no
+    # memory read or written). Older producers omit both.
+    think: bool = False
+    temporary: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_context: TraceContext = Field(default_factory=TraceContext)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -267,6 +267,7 @@ class KafkaPublisher:
             trace_context=TraceContext(traceparent=ctx.trace_id),
             status="success",
             timestamp=datetime.now(UTC),
+            think=bool(getattr(ctx, "think_used", False)),
             **billing_fields(ctx, answered=True),
         )
 
@@ -313,7 +314,10 @@ class KafkaPublisher:
         )
 
     async def publish_memory_update(self, ctx: PipelineContext, full_response: str) -> None:
-        """Publish memory.update.requested event to trigger async memory synthesis."""
+        """Publish memory.update.requested event to trigger async memory synthesis. Never for a temporary chat."""
+        if getattr(ctx, "temporary", False):
+            self.logger.info("memory_update_skipped_temporary", conversation_id=ctx.conversation_id)
+            return
         mode_val = (
             ctx.plan.mode.value if ctx.plan and hasattr(ctx.plan.mode, "value") else "default"
         )
@@ -364,6 +368,26 @@ class KafkaPublisher:
             correlation_id=ctx.request_id,
         )
         self._mark_terminal_published(ctx)
+
+    async def publish_suggestions(self, ctx: PipelineContext, suggestions: list[str], model: str) -> None:
+        """Publish chat.response.suggestions 1.0 (flat JSON, keyed by conversation_id): 2 or 3 follow-up questions for a
+        finished answer. At most once per answer, and only after a successful chat.response.generated."""
+        import uuid
+
+        event = {
+            "event_type": "chat.response.suggestions",
+            "schema_version": "1.0",
+            "event_id": str(uuid.uuid4()),
+            "occurred_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "conversation_id": ctx.conversation_id,
+            "user_id": ctx.user_id,
+            "request_message_id": ctx.message_id,
+            "response_message_id": ctx.response_message_id,
+            "suggestions": suggestions,
+            "model": model,
+        }
+        await self._send(topic="chat.response.suggestions", key=ctx.conversation_id, payload=event,
+                         correlation_id=ctx.request_id)
 
     async def publish_usage_metered(
         self, *, user_id: str, feature: str, calls: list[dict[str, Any]], conversation_id: str | None = None,

@@ -22,7 +22,7 @@ CATALOG_MODEL_MISSING = Gauge(
     "1 when a billing catalog model cannot be served here (or a registry model is not in the catalog), else 0",
     ["model", "reason"],
 )
-REASONS = ("disabled", "no_credentials", "no_adapter", "not_in_registry", "not_in_catalog", "group_mismatch")
+REASONS = ("disabled", "no_credentials", "no_adapter", "not_in_registry", "not_in_catalog", "group_mismatch", "think_mismatch")
 
 CHECK_INTERVAL_S = 600.0
 
@@ -38,6 +38,10 @@ def compare(catalog: list[dict[str, Any]], registry: Any, has_credentials: Calla
     by_id = {m["id"]: m for m in catalog}
     for model_id, entry in by_id.items():
         spec = registry.models.get(model_id)
+        if spec is not None and entry.get("think") and getattr(getattr(spec, "think", None), "kind", "none") == "none":
+            # billing offers "Think longer" for this model but llm-service has no reasoning control for it: the toggle would
+            # do nothing. (Reported in addition to any other problem of the same model.)
+            add("think_mismatch", model_id)
         if spec is None:
             add("not_in_registry", model_id)
         elif spec.group != entry.get("group"):

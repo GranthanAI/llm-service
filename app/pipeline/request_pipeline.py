@@ -23,6 +23,7 @@ from app.models.request import ChatMessageCreatedEvent
 from app.producers.kafka_producer import KafkaPublisher
 from app.prompts.builder import PromptBuilder
 from app.providers.router import GenerationRouter
+from app.providers.registry import think_output_tokens
 from app.request_analyzer.analyzer import RequestAnalyzer
 from app.request_analyzer.fast_path import is_simple_smalltalk
 from app.request_analyzer.safe_default import SafeDefaultFactory
@@ -282,6 +283,8 @@ class RequestPipeline:
                 "temperature": plan.suggested_temperature,
                 "max_tokens": max_tokens,
             }
+            if ctx.think:           # each adapter that can reason maps this to its own parameter; others ignore it
+                params["think"] = True
             router = group_chain if group_chain is not None else self.generation_router
             token_iter = self._track_route(router.generate_stream(trimmed, params), params, ctx)
 
@@ -333,7 +336,7 @@ class RequestPipeline:
             from app.exceptions.provider import AllProvidersFailedError
             raise AllProvidersFailedError(
                 f"billing granted model group {grant.granted_group!r} but group routing is not configured (MODEL_REGISTRY_FILE)")
-        return self.group_chains.build(grant)
+        return self.group_chains.build(grant, think=bool(getattr(ctx, "think", False)))
 
     def _provider_candidates(self) -> list[tuple[str, str, int]]:
         """(provider, model, max output tokens) for every provider the generation chain may try, in order. Without a
@@ -365,7 +368,8 @@ class RequestPipeline:
             # Billing group chain: each model's registry window and the grant's context cap bound the budget.
             from app.context_window.budget_policy import provider_of
             from app.context_window.fit import group_limits
-            candidates = [(e.name, e.spec.provider_model, e.spec.max_output_tokens, e) for e in chain.entries]
+            candidates = [(e.name, e.spec.provider_model, think_output_tokens(e.spec) if ctx.think else e.spec.max_output_tokens, e)
+                          for e in chain.entries]
         else:
             candidates = [(n, m, t, None) for n, m, t in self._provider_candidates()]
         for provider_name, target_model, max_tokens, entry in candidates:
@@ -509,4 +513,5 @@ class RequestPipeline:
                     ctx.generation_fallback_used = True
                 if route.get("model_id"):               # billing group chain: the catalog id that answered
                     ctx.answered_model = route["model_id"]
+                ctx.think_used = bool(route.get("think"))   # reasoning was really used for the answering call
             yield token

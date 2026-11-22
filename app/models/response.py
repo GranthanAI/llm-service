@@ -73,7 +73,7 @@ class ChatResponseGeneratedEvent(BaseModel):
     """
 
     event_type: str = "chat.response.generated"
-    schema_version: str = "2.2"
+    schema_version: str = "2.3"
     response_id: str
     conversation_id: str
     user_id: str
@@ -103,6 +103,9 @@ class ChatResponseGeneratedEvent(BaseModel):
     model: str | None = None                  # catalog id of the model that answered (legacy: the provider model)
     downgraded: bool = False
     calls: list[dict[str, Any]] = Field(default_factory=list)
+    # 2.3 (additive): the answer call actually used provider reasoning (false when the user asked but the answering
+    # model cannot think longer).
+    think: bool = False
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

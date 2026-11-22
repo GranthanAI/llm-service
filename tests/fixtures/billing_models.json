@@ -1,102 +1,130 @@
 {
   "models": [
     {
+      "available": true,
       "group": "fast",
       "id": "openai/gpt-oss-20b",
       "label": "GPT-OSS 20B",
       "provider": "groq",
-      "sort_order": 0
+      "sort_order": 0,
+      "think": true
     },
     {
+      "available": true,
       "group": "fast",
       "id": "gemini-3.1-flash-lite",
       "label": "Gemini 3.1 Flash-Lite",
       "provider": "google",
-      "sort_order": 1
+      "sort_order": 1,
+      "think": true
     },
     {
+      "available": true,
       "group": "smart",
       "id": "openai/gpt-oss-120b",
       "label": "GPT-OSS 120B",
       "provider": "groq",
-      "sort_order": 2
+      "sort_order": 2,
+      "think": true
     },
     {
+      "available": true,
       "group": "smart",
       "id": "claude-haiku-5-5",
       "label": "Claude Haiku 5.5",
       "provider": "anthropic",
-      "sort_order": 3
+      "sort_order": 3,
+      "think": true
     },
     {
+      "available": true,
       "group": "smart",
       "id": "gpt-6-luna",
       "label": "GPT-6 Luna",
       "provider": "openai",
-      "sort_order": 4
+      "sort_order": 4,
+      "think": true
     },
     {
+      "available": true,
       "group": "smart",
       "id": "gemini-3.5-flash-lite",
       "label": "Gemini 3.5 Flash-Lite",
       "provider": "google",
-      "sort_order": 5
+      "sort_order": 5,
+      "think": true
     },
     {
+      "available": true,
       "group": "smart",
       "id": "gemini-3.8-flash",
       "label": "Gemini 3.8 Flash",
       "provider": "google",
-      "sort_order": 6
+      "sort_order": 6,
+      "think": true
     },
     {
+      "available": true,
       "group": "best",
       "id": "claude-sonnet-5-5",
       "label": "Claude Sonnet 5.5",
       "provider": "anthropic",
-      "sort_order": 7
+      "sort_order": 7,
+      "think": true
     },
     {
+      "available": true,
       "group": "best",
       "id": "gpt-6.1-sol",
       "label": "GPT-6.1 Sol",
       "provider": "openai",
-      "sort_order": 8
+      "sort_order": 8,
+      "think": true
     },
     {
+      "available": true,
       "group": "ultra",
       "id": "claude-opus-5-5",
       "label": "Claude Opus 5.5",
       "provider": "anthropic",
-      "sort_order": 9
+      "sort_order": 9,
+      "think": true
     },
     {
+      "available": true,
+      "group": "fast",
       "id": "gemini-2.5-flash-lite",
       "label": "Gemini 2.5 Flash-Lite",
       "provider": "google",
-      "group": "fast",
-      "sort_order": 10
+      "sort_order": 10,
+      "think": true
     },
     {
+      "available": true,
+      "group": "best",
       "id": "gemini-3.1-pro",
       "label": "Gemini 3.1 Pro",
       "provider": "google",
-      "group": "best",
-      "sort_order": 11
+      "sort_order": 11,
+      "think": true
     },
     {
+      "available": true,
+      "group": "ultra",
       "id": "gpt-6-astra",
       "label": "GPT-6 Astra",
       "provider": "openai",
-      "group": "ultra",
-      "sort_order": 12
+      "sort_order": 12,
+      "think": true
     },
     {
+      "available": true,
+      "group": "smart",
       "id": "gemini-2.5-flash",
       "label": "Gemini 2.5 Flash",
       "provider": "google",
-      "group": "smart",
-      "sort_order": 13
+      "sort_order": 13,
+      "think": true
     }
   ]
 }

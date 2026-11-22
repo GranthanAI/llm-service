@@ -80,7 +80,7 @@ async def test_success_event_carries_the_billing_fields():
     add_calls(ctx)
     await publisher(prod).publish_response(ctx, "answer text")
     (ev,) = prod.of("chat.response.generated")
-    assert ev["schema_version"] == "2.2" and ev["status"] == "success"
+    assert ev["schema_version"] == "2.3" and ev["status"] == "success"
     assert (ev["hold_id"], ev["model_group"], ev["model"], ev["downgraded"]) == ("hold-1", "best", "gpt-6.1-sol", True)
     assert [c["purpose"] for c in ev["calls"]] == ["request_analysis", "answer"]
     assert ev["calls"][1] == {"provider": "anthropic", "model": "claude-sonnet-5-5", "purpose": "answer",
@@ -153,7 +153,7 @@ OLD_GENERATED_FIELDS = {
     "response_message_id", "full_content", "provider", "generation_fallback_used", "mode", "skill", "engine_type",
     "usage", "cost_usd", "latency_ms", "ttft_ms", "finish_reason", "tools_used", "context_sources", "citations",
     "trace_context", "status", "error_code", "error_message", "timestamp"}
-NEW_GENERATED_FIELDS = {"hold_id", "model_group", "model", "downgraded", "calls"}
+NEW_GENERATED_FIELDS = {"hold_id", "model_group", "model", "downgraded", "calls", "think"}
 
 
 async def test_legacy_event_differs_from_the_old_one_only_by_the_new_optional_fields():
@@ -163,7 +163,7 @@ async def test_legacy_event_differs_from_the_old_one_only_by_the_new_optional_fi
     (ev,) = prod.of("chat.response.generated")
     assert set(ev) == OLD_GENERATED_FIELDS | NEW_GENERATED_FIELDS
     assert (ev["hold_id"], ev["model_group"], ev["downgraded"], ev["calls"]) == (None, None, False, [])
-    assert ev["schema_version"] == "2.2" and ev["status"] == "success" and ev["finish_reason"] == "stop"
+    assert ev["schema_version"] == "2.3" and ev["status"] == "success" and ev["finish_reason"] == "stop"
     assert ev["provider"] == "nvidia" and ev["mode"] == "default" and ev["usage"] == {
         "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 

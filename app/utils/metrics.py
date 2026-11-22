@@ -171,3 +171,14 @@ USAGE_ESTIMATED_TOTAL = Counter(
     "Model calls whose token usage was estimated because the provider reported none",
     ["provider", "model"],
 )
+
+FOLLOWUPS_TOTAL = Counter(
+    "followups_total",
+    "Follow-up suggestion attempts by outcome",
+    ["outcome"],  # published | skipped | timeout | invalid | error
+)
+THINK_REQUESTS_TOTAL = Counter(
+    "llm_think_requests_total",
+    "Answers that asked to think longer, by whether reasoning was actually used",
+    ["used"],
+)

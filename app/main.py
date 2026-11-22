@@ -79,6 +79,31 @@ from app.workflow_engine.mode_handlers import (
 )
 
 
+def _build_followups(config, publisher, groq_key, groq_budget, model_resolver):
+    """The follow-up suggestion service, or None when disabled / no model is configured. The model is FOLLOWUP_MODEL, else a
+    Gemini Flash-Lite when a Google key exists, else the Groq request-analysis model (never the answers' Groq model)."""
+    from app.followups import FollowupService
+    from app.providers.gemini import GeminiAdapter
+    from app.providers.groq import GroqAdapter
+
+    if not config.followups_enabled:
+        return None
+    google_key = config.gemini_api_key.get_secret_value()
+    model = config.followup_model
+    adapter = None
+    if google_key and (not model or model.startswith("gemini")):
+        model = model or "gemini-3.1-flash-lite"
+        adapter = GeminiAdapter(api_key=google_key, model=model)
+    elif groq_key:
+        model = model if model and not model.startswith("gemini") else config.request_analysis_model
+        adapter = GroqAdapter(api_key=groq_key, model=model, timeout_s=config.groq_timeout_ms / 1000.0,
+                              tpm_limit=config.groq_tpm_limit, budget=groq_budget)
+    if adapter is None:
+        return None
+    return FollowupService(publisher, adapter, model, timeout_ms=config.followup_timeout_ms,
+                           max_tokens=config.followup_max_tokens, model_resolver=model_resolver)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
@@ -372,7 +397,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # 11. Initialize Kafka Producer & Streaming Engine (Phase 16)
     publisher = KafkaPublisher(config=config)
-    streaming_engine = StreamingEngine(publisher=publisher)
+    followups = _build_followups(config, publisher, groq_key, groq_budget, (lambda p, m: container.catalog_model(p, m) if getattr(container, "catalog_model", None) else m))
+    streaming_engine = StreamingEngine(publisher=publisher, followups=followups)
+    container.followups = followups
     container.kafka_producer = publisher
     container.streaming_engine = streaming_engine
 

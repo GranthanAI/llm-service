@@ -42,8 +42,10 @@ class StreamingEngine:
         rate_limited_chunk_size: int = 12,
         flush_interval_ms: int = 50,
         logger_instance: structlog.stdlib.BoundLogger | None = None,
+        followups: object | None = None,
     ):
         self.publisher = publisher
+        self.followups = followups      # FollowupService | None: starts a background task after a successful answer
         self.default_chunk_size = default_chunk_size
         self.first_chunk_size = first_chunk_size
         self.code_block_chunk_size = code_block_chunk_size
@@ -216,6 +218,13 @@ class StreamingEngine:
 
             # Publish memory.update.requested event
             await self.publisher.publish_memory_update(ctx, full_response)
+
+            # Follow-up questions: a background task that can never delay or fail the answer.
+            if self.followups is not None:
+                try:
+                    self.followups.maybe_start(ctx, full_response)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning("followups_start_failed", error=type(exc).__name__)
 
             self.logger.info(
                 "Streaming response completed and published",

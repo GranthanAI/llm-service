@@ -68,6 +68,12 @@ class LLMServiceConfig(BaseSettings):
     request_analysis_model: str = "qwen/qwen3.8-27b"
     request_analysis_max_tokens: int = 1024      # REQUEST_ANALYSIS_MAX_TOKENS: gpt-oss reasoning tokens count inside it
     request_analysis_retry_max_tokens: int = 2048  # cap of the one retry (cap doubled) after an empty or unparseable answer
+    # Follow-up question suggestions (chat.response.suggestions). Default model: Gemini Flash-Lite when a Google key is configured,
+    # else the Groq request-analysis model, so it never shares the answers' or memory-service's Groq bucket.
+    followups_enabled: bool = True
+    followup_model: str = ""               # empty = automatic (see above)
+    followup_timeout_ms: int = 4000
+    followup_max_tokens: int = 300
     # Maximum INPUT tokens sent per request; lower-priority context (graph, memory, old history, search
     # results) is trimmed to fit. Sized for the free Groq tier (8000 tokens/min per request, 7000 input
     # tokens/min on qwen): the prompt AND the answer must both fit. 0 = no cap (model's full window).

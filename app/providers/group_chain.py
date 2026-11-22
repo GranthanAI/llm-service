@@ -53,14 +53,17 @@ class GroupChainBuilder:
 
     def _adapter(self, spec: ModelSpec) -> BaseProviderAdapter | None:
         if spec.id not in self._adapters:
-            self._adapters[spec.id] = self._adapter_factory(spec)
+            built = self._adapter_factory(spec)
+            if built is not None:
+                built.think_spec = spec.think
+            self._adapters[spec.id] = built
         adapter = self._adapters[spec.id]
         if adapter is None and spec.id not in self._missing_logged:
             self._missing_logged.add(spec.id)
             logger.warning("model_skipped_for_routing", model=spec.id, reason=f"no adapter for provider {spec.provider}")
         return adapter
 
-    def build(self, grant: BillingGrant | None) -> ProviderChain | None:
+    def build(self, grant: BillingGrant | None, think: bool = False) -> ProviderChain | None:
         """None -> legacy routing. Otherwise the group chain; raises AllProvidersFailedError when the granted group has
         no usable model at all (nothing is ever tried outside the group)."""
         specs = self.registry.chain_for(grant, self._has_credentials)
@@ -83,6 +86,11 @@ class GroupChainBuilder:
                     input_cap=grant.max_context_tokens,
                 )
             )
+        if think and not grant.granted_model:
+            # Think longer on Auto: prefer the first model in the group's Auto order that can reason (stable, so the rest of
+            # the order and the fallbacks are unchanged). Never leaves the granted group; none capable = answer normally.
+            capable = [e for e in entries if e.spec.think.kind != "none"]
+            entries = capable + [e for e in entries if e.spec.think.kind == "none"]
         if not entries:
             raise AllProvidersFailedError(
                 f"No model of the granted group {grant.granted_group!r} is available (disabled, no credentials or no adapter)"

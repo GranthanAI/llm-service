@@ -136,7 +136,10 @@ class ContextCollector:
         return bundle
 
     async def _fetch_memory(self, ctx: PipelineContext) -> MemoryContext:
-        """Fetch memory context via gRPC."""
+        """Fetch memory context via gRPC. A temporary chat reads no memory at all (no long-term facts, no short-term
+        window): the history that came with the event is its only conversation context."""
+        if getattr(ctx, "temporary", False):
+            return MemoryContext()
         start_time = time.perf_counter()
         try:
             res = await self.memory_client.get_memory_context(

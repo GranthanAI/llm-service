@@ -18,6 +18,17 @@ class BaseProviderAdapter(ABC):
     def __init__(self, provider_name: str, model_name: str):
         self.provider_name = provider_name
         self.model_name = model_name
+        # How this model thinks longer (set from the registry by the group chain builder; kind "none" = it cannot).
+        self.think_spec: Any = None
+
+    def wants_think(self, params: dict[str, Any]) -> bool:
+        """True when this call asked to think longer AND this model has a reasoning control. Marks the call so the chain can
+        report that reasoning was really used (chat.response.generated.think)."""
+        spec = self.think_spec
+        if not params.get("think") or spec is None or spec.kind == "none":
+            return False
+        params["_think_applied"] = True
+        return True
 
     @abstractmethod
     async def execute(
